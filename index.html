@@ -16,6 +16,11 @@
       <button class="tbtn" id="zoomIn" title="Yakınlaş">+</button>
       <button class="tbtn tbtn-text" id="zoomFit" title="Sayfayı genişliğe sığdır">Sığdır</button>
     </div>
+    <div class="toolbar-group" id="toolGroup" hidden>
+      <button class="tbtn tbtn-text" id="areaToolBtn" title="Bir bölgeyi (görsel, logo, imza…) yakala ve taşınabilir yap">
+        ⬚ Görsel/Logo Taşı
+      </button>
+    </div>
     <div class="spacer"></div>
     <div class="toolbar-group" id="actionGroup" hidden>
       <span class="edit-count" id="editCount" hidden></span>
@@ -25,13 +30,50 @@
     </div>
   </header>
 
+  <!-- Sabit özellik çubuğu: seçili öğeye göre içerik değişir, hiçbir zaman metnin yanında açılmaz -->
+  <div class="propertybar" id="propertyBar" hidden>
+    <div class="pb-row" id="pbTextRow" hidden>
+      <textarea id="pbText" rows="1" spellcheck="false" placeholder="Metin"></textarea>
+      <label class="field" title="Punto">
+        <span>Boyut</span>
+        <input type="number" id="pbSize" min="4" max="140" step="0.5" />
+      </label>
+      <label class="field" title="Yazı rengi">
+        <span>Renk</span>
+        <input type="color" id="pbColor" />
+      </label>
+      <button class="opt-btn" id="pbBold" title="Kalın">K</button>
+      <select id="pbFont" title="Yazı tipi">
+        <option value="sans">Sans</option>
+        <option value="serif">Serif</option>
+      </select>
+    </div>
+    <div class="pb-row" id="pbAreaRow" hidden>
+      <span class="pb-label">Görsel / logo</span>
+      <button class="opt-btn" id="pbShrink" title="Küçült">−</button>
+      <button class="opt-btn" id="pbGrow" title="Büyüt">+</button>
+      <button class="tbtn tbtn-text" id="pbToggleHide">Gizle</button>
+    </div>
+    <div class="pb-row" id="pbMultiRow" hidden>
+      <span class="pb-label" id="pbMultiLabel">2 öğe seçili</span>
+      <span class="pb-hint">Sürükleyerek birlikte taşı</span>
+    </div>
+    <div class="pb-row pb-actions">
+      <button class="ghost-btn" id="pbRevert" hidden>Orijinale dön</button>
+      <button class="ghost-btn" id="pbRemove" hidden>Kaldır</button>
+      <span class="spacer"></span>
+      <button class="ghost-btn danger" id="pbDelete">Sil</button>
+      <button class="apply-btn" id="pbClose">Kapat</button>
+    </div>
+  </div>
+
   <main class="workspace" id="workspace">
     <!-- Boş durum -->
     <section class="empty" id="emptyState">
       <div class="drop-card" id="dropCard">
         <div class="drop-mark" aria-hidden="true">✎</div>
         <h1>PDF'ini aç, metne tıkla, düzelt.</h1>
-        <p>Dosyayı buraya sürükle ya da bilgisayarından seç. Düzelttiğin<br />metinler aynı yerde, aynı boyutta yeni PDF'e işlenir.</p>
+        <p>Dosyayı buraya sürükle ya da bilgisayarından seç. Metinleri ve<br />görselleri sürükleyerek taşıyabilir, üstteki çubuktan biçimlendirebilirsin.</p>
         <button class="pick-btn" id="pickBtn">PDF Seç</button>
       </div>
     </section>
@@ -40,34 +82,8 @@
     <div class="pages" id="pages"></div>
   </main>
 
-  <!-- Düzenleme kutusu -->
-  <div class="editor" id="editor" hidden>
-    <textarea id="editorText" rows="1" spellcheck="false"></textarea>
-    <div class="editor-row">
-      <label class="field" title="Punto">
-        <span>Boyut</span>
-        <input type="number" id="editorSize" min="4" max="120" step="0.5" />
-      </label>
-      <label class="field" title="Yazı rengi">
-        <span>Renk</span>
-        <input type="color" id="editorColor" />
-      </label>
-      <button class="opt-btn" id="editorBold" title="Kalın">K</button>
-      <select id="editorFont" title="Yazı tipi">
-        <option value="sans">Sans</option>
-        <option value="serif">Serif</option>
-      </select>
-    </div>
-    <div class="editor-row editor-actions">
-      <button class="ghost-btn" id="editorRevert" hidden>Orijinale dön</button>
-      <span class="spacer"></span>
-      <button class="ghost-btn" id="editorCancel">Vazgeç</button>
-      <button class="apply-btn" id="editorApply">Uygula</button>
-    </div>
-  </div>
-
   <div class="hint" id="hint" hidden>
-    <span>Düzeltmek istediğin metne tıkla → yaz → <b>Uygula</b>. Bitince sağ üstten PDF'i indir.</span>
+    <span>Metne <b>tıkla</b> → üstten düzenle. <b>Sürükle</b> → taşı. Birden fazlasını <b>Shift+tıkla</b> ile seçip birlikte taşı.</span>
     <button id="hintClose" aria-label="Kapat">×</button>
   </div>
 

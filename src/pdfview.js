@@ -1,35 +1,20 @@
-// PDF görüntüleme: pdf.js ile sayfa çizimi + tıklanabilir metin katmanı
+// PDF görüntüleme: pdf.js ile sayfa çizimi + metin/alan katmanlarının çizimi
 import * as pdfjsLib from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { state, textKey } from './state.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
-export const state = {
-  doc: null,
-  bytes: null,      // orijinal bayt kopyası (pdf-lib için saklanır)
-  name: '',
-  scale: 1.3,
-  edits: new Map(), // "sayfa:indeks" -> düzeltme
-  onItemClick: null,
-};
-
-export function editKey(meta) {
-  return `${meta.page}:${meta.index}`;
-}
-
 export async function openPdf(bytes, name) {
-  // pdf.js buffer'ı worker'a devrettiği için kopyayla çalış
   if (state.doc) {
     try { await state.doc.destroy(); } catch { /* önemsiz */ }
   }
   state.bytes = new Uint8Array(bytes);
   state.name = name;
-  state.edits.clear();
   state.doc = await pdfjsLib.getDocument({ data: state.bytes.slice(0) }).promise;
 }
 
 export function fitScale(containerWidth) {
-  // İlk sayfa A4 varsayımıyla değil, gerçek genişlikle hesaplanır (renderAll içinde ayarlanır)
   return Math.min(1.6, Math.max(0.5, containerWidth / 630));
 }
 
@@ -38,6 +23,8 @@ export async function renderAll(container) {
   const gen = ++renderGen;
   const doc = state.doc;
   container.innerHTML = '';
+  state.itemRefs.clear();
+  state.pageInfos.clear();
   for (let p = 1; p <= doc.numPages; p++) {
     if (gen !== renderGen || doc !== state.doc) return; // yeni bir çizim başladı
     await renderPage(p, container, doc);
@@ -45,6 +32,7 @@ export async function renderAll(container) {
 }
 
 async function renderPage(num, container, doc) {
+  const pageIdx = num - 1;
   const page = await doc.getPage(num);
   const vp = page.getViewport({ scale: state.scale });
   const pdfH = page.getViewport({ scale: 1 }).height;
@@ -52,6 +40,7 @@ async function renderPage(num, container, doc) {
 
   const wrap = document.createElement('div');
   wrap.className = 'page-wrap';
+  wrap.dataset.page = String(pageIdx);
   wrap.style.width = `${vp.width}px`;
   wrap.style.height = `${vp.height}px`;
 
@@ -66,14 +55,23 @@ async function renderPage(num, container, doc) {
   pageNo.className = 'page-num';
   pageNo.textContent = num;
   wrap.appendChild(pageNo);
+
+  wrap.addEventListener('mousedown', (ev) => {
+    if (ev.target === wrap || ev.target === canvas || ev.target === pageNo) {
+      state.onPageMouseDown?.(pageIdx, wrap, ev);
+    }
+  });
+
   container.appendChild(wrap);
 
   const ctx = canvas.getContext('2d');
   await page.render({ canvasContext: ctx, viewport: vp, transform: [dpr, 0, 0, dpr, 0, 0] }).promise;
 
-  const tc = await page.getTextContent();
+  const pageInfo = { canvas, dpr, pdfH, scale: state.scale, wrap, page: pageIdx };
+  state.pageInfos.set(pageIdx, pageInfo);
 
-  // Font bilgisi: kalınlık gerçek font adından, serif/sans pdf.js stilinden
+  // ---- Metin öğeleri ----
+  const tc = await page.getTextContent();
   const fontInfo = {};
   for (const fn of new Set(tc.items.map((i) => i.fontName))) {
     let realName = '';
@@ -88,88 +86,205 @@ async function renderPage(num, container, doc) {
   tc.items.forEach((it, index) => {
     if (!it.str || !it.str.trim()) return;
     const [a, b, c, d, e, f] = it.transform;
-    if (Math.abs(b) > 0.01 || Math.abs(c) > 0.01) return; // döndürülmüş metin: v1'de atla
+    if (Math.abs(b) > 0.01 || Math.abs(c) > 0.01) return; // döndürülmüş metin desteklenmiyor
     const fs = Math.abs(d) || Math.abs(a);
     if (!fs || !it.width) return;
 
     const meta = {
-      page: num - 1,
-      index,
-      str: it.str,
-      x: e,
-      yBase: f,
-      w: it.width,
-      fs,
+      page: pageIdx, index, str: it.str, x: e, yBase: f, w: it.width, fs,
       bold: fontInfo[it.fontName]?.bold || false,
       serif: fontInfo[it.fontName]?.serif || false,
-      canvas,
-      pxScale: state.scale * dpr,
-      pdfH,
     };
+    renderTextItem(wrap, pageInfo, meta);
+  });
 
-    const box = document.createElement('div');
-    box.className = 'titem';
-    box.title = 'Düzenlemek için tıkla';
-    positionBox(box, meta);
-    box.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      state.onItemClick?.(meta, box);
-    });
+  // ---- Alan (görsel/logo) öğeleri ----
+  for (const rec of state.areas.values()) {
+    if (rec.page === pageIdx) renderAreaItem(wrap, pageInfo, rec);
+  }
+}
 
-    const existing = state.edits.get(editKey(meta));
-    if (existing) { existing.meta = { ...existing.meta, canvas, pxScale: meta.pxScale }; paintEdit(box, meta, existing); }
-    wrap.appendChild(box);
+function positionAt(el, xPt, topPt, wPt, hPt, s) {
+  el.style.left = `${xPt * s - 2}px`;
+  el.style.top = `${topPt * s - 1}px`;
+  el.style.minWidth = `${wPt * s + 4}px`;
+  el.style.minHeight = `${hPt * s + 2}px`;
+}
+
+function attachPointer(el, key, handler) {
+  el.dataset.key = key;
+  el.addEventListener('mousedown', (ev) => {
+    ev.stopPropagation();
+    handler(ev, el);
   });
 }
 
-function positionBox(box, meta) {
-  const s = state.scale;
-  box.style.left = `${meta.x * s - 2}px`;
-  box.style.top = `${(meta.pdfH - meta.yBase - meta.fs * 0.87) * s - 1}px`;
-  box.style.minWidth = `${meta.w * s + 4}px`;
-  box.style.minHeight = `${meta.fs * 1.16 * s + 2}px`;
-  box.style.paddingBottom = `${meta.fs * 0.18 * s}px`;
-  box.style.paddingLeft = '2px';
+// ---------- Metin öğesi ----------
+export function renderTextItem(wrap, pageInfo, meta) {
+  const key = textKey(meta.page, meta.index);
+  const s = pageInfo.scale;
+  const fullMeta = { ...meta, canvas: pageInfo.canvas, pxScale: s * pageInfo.dpr, pdfH: pageInfo.pdfH };
+  state.itemRefs.set(key, { kind: 'text', wrap, pageInfo, fullMeta });
+
+  const rec = state.textEdits.get(key);
+  const selected = state.selected.has(key);
+
+  if (!rec) {
+    const hit = document.createElement('div');
+    hit.className = 'titem' + (selected ? ' selected' : '');
+    hit.title = 'Seç, üstteki çubuktan düzenle';
+    positionAt(hit, meta.x, pageInfo.pdfH - meta.yBase - meta.fs * 0.87, meta.w, meta.fs * 1.16, s);
+    hit.style.paddingBottom = `${meta.fs * 0.18 * s}px`;
+    attachPointer(hit, key, (ev) => state.onTextPointerDown?.(fullMeta, key, hit, ev));
+    wrap.appendChild(hit);
+    return;
+  }
+
+  // Değiştirilmiş: orijinal konumda kapatma + (varsa) yeni konumda içerik
+  const cover = document.createElement('div');
+  cover.className = 'tcover' + (selected ? ' selected' : '');
+  positionAt(cover, meta.x, pageInfo.pdfH - meta.yBase - meta.fs * 0.87, meta.w, meta.fs * 1.16, s);
+  cover.style.background = rec.bg;
+  attachPointer(cover, key, (ev) => state.onTextPointerDown?.(fullMeta, key, cover, ev));
+  wrap.appendChild(cover);
+
+  if (rec.text) {
+    const content = document.createElement('div');
+    content.className = 'titem edited' + (selected ? ' selected' : '');
+    const left = meta.x + rec.dx;
+    const topPdf = pageInfo.pdfH - (meta.yBase + rec.dy) - rec.size * 0.87;
+    positionAt(content, left, topPdf, meta.w, rec.size * 1.16, s);
+    content.style.paddingBottom = `${rec.size * 0.18 * s}px`;
+    content.style.background = rec.bg;
+    content.style.color = rec.color;
+    content.style.fontSize = `${rec.size * s}px`;
+    content.style.fontFamily = rec.serif
+      ? 'Georgia, "Times New Roman", serif'
+      : 'Arial, Helvetica, sans-serif';
+    content.style.fontWeight = rec.bold ? '700' : '400';
+    content.style.width = 'max-content';
+    content.style.whiteSpace = 'pre';
+    content.textContent = rec.text;
+    attachPointer(content, key, (ev) => state.onTextPointerDown?.(fullMeta, key, content, ev));
+    wrap.appendChild(content);
+  }
 }
 
-// Düzeltilen kutuyu sayfa üzerinde canlı önizle
-export function paintEdit(box, meta, edit) {
-  box.classList.add('edited');
-  box.style.background = edit.bg;
-  box.style.color = edit.color;
-  box.style.fontSize = `${edit.size * state.scale}px`;
-  box.style.fontFamily = edit.serif
-    ? 'Georgia, "Times New Roman", serif'
-    : 'Arial, Helvetica, sans-serif';
-  box.style.fontWeight = edit.bold ? '700' : '400';
-  box.style.width = 'max-content';
-  box.textContent = edit.text;
+export function refreshTextItem(key) {
+  const ref = state.itemRefs.get(key);
+  if (!ref) return;
+  ref.wrap.querySelectorAll(`[data-key="${CSS.escape(key)}"]`).forEach((n) => n.remove());
+  renderTextItem(ref.wrap, ref.pageInfo, ref.fullMeta);
 }
 
-export function clearEditPaint(box) {
-  box.classList.remove('edited');
-  box.textContent = '';
-  ['background', 'color', 'fontSize', 'fontFamily', 'fontWeight', 'width'].forEach(
-    (p) => (box.style[p] = ''),
-  );
+// ---------- Alan (görsel/logo) öğesi ----------
+export function renderAreaItem(wrap, pageInfo, rec) {
+  const s = pageInfo.scale;
+  const key = rec.key;
+  state.itemRefs.set(key, { kind: 'area', wrap, pageInfo });
+  const selected = state.selected.has(key);
+
+  const cover = document.createElement('div');
+  cover.className = 'acover' + (selected && rec.hidden ? ' selected' : '');
+  const topOrig = pageInfo.pdfH - rec.y - rec.h;
+  positionAt(cover, rec.x, topOrig, rec.w, rec.h, s);
+  cover.style.background = rec.bg;
+  attachPointer(cover, key, (ev) => state.onAreaPointerDown?.(rec, cover, ev));
+  wrap.appendChild(cover);
+
+  if (!rec.hidden) {
+    const content = document.createElement('div');
+    content.className = 'aitem' + (selected ? ' selected' : '');
+    const w = rec.w * rec.scale;
+    const h = rec.h * rec.scale;
+    const x = rec.x + rec.dx + (rec.w - w) / 2;
+    const y = rec.y + rec.dy + (rec.h - h) / 2;
+    const topPdf = pageInfo.pdfH - y - h;
+    positionAt(content, x, topPdf, w, h, s);
+    content.style.width = `${w * s}px`;
+    content.style.height = `${h * s}px`;
+    content.style.minWidth = '';
+    content.style.minHeight = '';
+    const img = document.createElement('img');
+    img.draggable = false;
+    img.src = rec.url;
+    img.alt = '';
+    img.style.width = '100%';
+    img.style.height = '100%';
+    img.style.display = 'block';
+    content.appendChild(img);
+    attachPointer(content, key, (ev) => state.onAreaPointerDown?.(rec, content, ev));
+    wrap.appendChild(content);
+  }
 }
 
-// Zemin ve yazı rengini tuvalden örnekle
-export function sampleColors(meta) {
-  const k = meta.pxScale;
-  const ctx = meta.canvas.getContext('2d');
-  const bx = meta.x * k;
-  const by = (meta.pdfH - meta.yBase - meta.fs * 0.85) * k;
-  const bw = Math.max(2, meta.w * k);
-  const bh = Math.max(2, meta.fs * 1.1 * k);
+export function refreshAreaItem(key) {
+  const ref = state.itemRefs.get(key);
+  const rec = state.areas.get(key);
+  if (!ref || !rec) return;
+  ref.wrap.querySelectorAll(`[data-key="${CSS.escape(key)}"]`).forEach((n) => n.remove());
+  renderAreaItem(ref.wrap, ref.pageInfo, rec);
+}
 
-  const px = (x, y) => {
-    x = Math.max(0, Math.min(meta.canvas.width - 1, Math.round(x)));
-    y = Math.max(0, Math.min(meta.canvas.height - 1, Math.round(y)));
-    return ctx.getImageData(x, y, 1, 1).data;
+export function removeItemDOM(key) {
+  const ref = state.itemRefs.get(key);
+  if (!ref) return;
+  ref.wrap.querySelectorAll(`[data-key="${CSS.escape(key)}"]`).forEach((n) => n.remove());
+  state.itemRefs.delete(key);
+}
+
+// Yalnızca seçim/vurgu sınıfını tazeler (yeniden konumlamadan) — çoklu seçimde ucuz güncelleme için
+export function refreshSelectionClass(key) {
+  const ref = state.itemRefs.get(key);
+  if (!ref) return;
+  const on = state.selected.has(key);
+  ref.wrap.querySelectorAll(`[data-key="${CSS.escape(key)}"]`).forEach((n) => n.classList.toggle('selected', on));
+}
+
+// ---------- Geometri & renk yardımcıları ----------
+
+// Ekran (CSS px, sayfa köşesine göre) dikdörtgenini PDF nokta uzayına çevirir (sol-alt köşe standardı)
+export function screenRectToPdf(pageInfo, leftPx, topPx, wPx, hPx) {
+  const s = pageInfo.scale;
+  return {
+    x: leftPx / s,
+    y: pageInfo.pdfH - (topPx + hPx) / s,
+    w: wPx / s,
+    h: hPx / s,
   };
+}
 
-  // Zemin: kutunun hemen dışından örnekler, en yaygın olanı seç
+// Sayfanın render edilmiş tuvalinden bir bölgeyi PNG olarak kırpar
+export async function cropToPng(pageInfo, leftPx, topPx, wPx, hPx) {
+  const dpr = pageInfo.dpr;
+  const off = document.createElement('canvas');
+  off.width = Math.max(1, Math.round(wPx * dpr));
+  off.height = Math.max(1, Math.round(hPx * dpr));
+  off.getContext('2d').drawImage(
+    pageInfo.canvas,
+    leftPx * dpr, topPx * dpr, wPx * dpr, hPx * dpr,
+    0, 0, off.width, off.height,
+  );
+  const blob = await new Promise((res) => off.toBlob(res, 'image/png'));
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  return { bytes, w: off.width, h: off.height, blob };
+}
+
+function hex(r, g, b) {
+  return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+}
+
+function samplePixel(ctx, canvas, x, y) {
+  x = Math.max(0, Math.min(canvas.width - 1, Math.round(x)));
+  y = Math.max(0, Math.min(canvas.height - 1, Math.round(y)));
+  return ctx.getImageData(x, y, 1, 1).data;
+}
+
+// Bir dikdörtgenin hemen dışından en sık görülen zemin rengini örnekler
+export function sampleBgAround(pageInfo, leftPx, topPx, wPx, hPx) {
+  const dpr = pageInfo.dpr;
+  const ctx = pageInfo.canvas.getContext('2d');
+  const bx = leftPx * dpr, by = topPx * dpr, bw = wPx * dpr, bh = hPx * dpr;
   const pts = [
     [bx - 5, by + bh / 2], [bx + bw + 5, by + bh / 2],
     [bx + bw / 2, by - 5], [bx + bw / 2, by + bh + 5],
@@ -177,7 +292,33 @@ export function sampleColors(meta) {
   ];
   const counts = new Map();
   for (const [x, y] of pts) {
-    const [r, g, b] = px(x, y);
+    const [r, g, b] = samplePixel(ctx, pageInfo.canvas, x, y);
+    const k = `${r >> 4},${g >> 4},${b >> 4}`;
+    const cur = counts.get(k) || { n: 0, r, g, b };
+    cur.n++;
+    counts.set(k, cur);
+  }
+  const best = [...counts.values()].sort((p, q) => q.n - p.n)[0];
+  return hex(best.r, best.g, best.b);
+}
+
+// Metin öğesi için zemin + yazı rengini örnekler (imleç konumu meta'dan hesaplanır)
+export function sampleTextColors(fullMeta) {
+  const k = fullMeta.pxScale;
+  const ctx = fullMeta.canvas.getContext('2d');
+  const bx = fullMeta.x * k;
+  const by = (fullMeta.pdfH - fullMeta.yBase - fullMeta.fs * 0.85) * k;
+  const bw = Math.max(2, fullMeta.w * k);
+  const bh = Math.max(2, fullMeta.fs * 1.1 * k);
+
+  const pts = [
+    [bx - 5, by + bh / 2], [bx + bw + 5, by + bh / 2],
+    [bx + bw / 2, by - 5], [bx + bw / 2, by + bh + 5],
+    [bx - 5, by - 5], [bx + bw + 5, by + bh + 5],
+  ];
+  const counts = new Map();
+  for (const [x, y] of pts) {
+    const [r, g, b] = samplePixel(ctx, fullMeta.canvas, x, y);
     const key = `${r >> 4},${g >> 4},${b >> 4}`;
     const cur = counts.get(key) || { n: 0, r, g, b };
     cur.n++;
@@ -185,7 +326,6 @@ export function sampleColors(meta) {
   }
   const bg = [...counts.values()].sort((p, q) => q.n - p.n)[0];
 
-  // Yazı rengi: kutu içinde zeminden en uzak piksel
   const region = ctx.getImageData(Math.round(bx), Math.round(by), Math.ceil(bw), Math.ceil(bh)).data;
   let best = null;
   let bestDist = 0;
@@ -200,8 +340,5 @@ export function sampleColors(meta) {
     }
   }
   const textColor = bestDist > 2500 ? best : [0, 0, 0];
-
-  const hex = (r, g, b) =>
-    '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
   return { bg: hex(bg.r, bg.g, bg.b), color: hex(...textColor) };
 }
