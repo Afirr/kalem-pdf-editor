@@ -1,0 +1,357 @@
+/* Kalem — düzeltmen kırmızısı + mürekkep + kağıt */
+:root {
+  --ink: #22252d;
+  --ink-soft: #343845;
+  --paper: #e9e6df;
+  --page: #ffffff;
+  --red: #d6453a;
+  --red-soft: rgba(214, 69, 58, 0.12);
+  --text: #23252b;
+  --muted: #7a7d87;
+  --ui: -apple-system, "SF Pro Text", "Segoe UI", Roboto, Arial, sans-serif;
+  --serif: "Iowan Old Style", Georgia, "Times New Roman", serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  font-family: var(--ui);
+  background: var(--paper);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---------- Üst çubuk ---------- */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 16px;
+  height: 52px;
+  background: var(--ink);
+  color: #e8e7e3;
+  flex-shrink: 0;
+}
+.brand {
+  font-family: var(--serif);
+  font-size: 21px;
+  letter-spacing: 0.01em;
+  user-select: none;
+}
+.brand-dot { color: var(--red); }
+.filename {
+  font-size: 12.5px;
+  color: #b9bbc4;
+  max-width: 30ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-left: 1px solid var(--ink-soft);
+  padding-left: 14px;
+}
+.spacer { flex: 1; }
+.toolbar-group { display: flex; align-items: center; gap: 6px; }
+
+.tbtn {
+  background: transparent;
+  border: 1px solid var(--ink-soft);
+  color: #d6d7dc;
+  border-radius: 7px;
+  min-width: 30px;
+  height: 30px;
+  font-size: 15px;
+  cursor: pointer;
+  font-family: var(--ui);
+}
+.tbtn-text { font-size: 12.5px; padding: 0 10px; }
+.tbtn:hover { background: var(--ink-soft); }
+.zoom-label { font-size: 12px; min-width: 42px; text-align: center; color: #b9bbc4; font-variant-numeric: tabular-nums; }
+
+.edit-count {
+  font-size: 12px;
+  background: var(--red);
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 99px;
+  font-weight: 600;
+}
+.download-btn {
+  background: var(--red);
+  border: none;
+  color: #fff;
+  font-weight: 600;
+  font-size: 13.5px;
+  padding: 0 16px;
+  height: 34px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: var(--ui);
+}
+.download-btn:hover { filter: brightness(1.08); }
+.download-btn:disabled { opacity: 0.45; cursor: default; filter: none; }
+
+:is(.tbtn, .download-btn, .pick-btn, .chip, .apply-btn, .ghost-btn, .opt-btn):focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+/* ---------- Çalışma alanı ---------- */
+.workspace {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+.pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 26px;
+  padding: 30px 20px 80px;
+}
+.page-wrap {
+  position: relative;
+  background: var(--page);
+  box-shadow: 0 1px 3px rgba(30, 28, 22, 0.18), 0 12px 34px rgba(30, 28, 22, 0.14);
+}
+.page-wrap canvas { display: block; }
+.page-num {
+  position: absolute;
+  top: 6px;
+  left: -34px;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Metin kutuları */
+.titem {
+  position: absolute;
+  cursor: text;
+  border-radius: 2px;
+  white-space: pre;
+  overflow: visible;
+  display: flex;
+  align-items: flex-end;
+  line-height: 1;
+}
+.titem:hover { box-shadow: inset 0 0 0 1.5px rgba(214, 69, 58, 0.55); background: var(--red-soft); }
+.titem.active { box-shadow: inset 0 0 0 1.5px var(--red); background: var(--red-soft); }
+.titem.edited { box-shadow: none; }
+.titem.edited:hover { box-shadow: inset 0 0 0 1.5px rgba(214, 69, 58, 0.55); }
+.titem.edited::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  border: 4px solid var(--red);
+  border-left-color: transparent;
+  border-bottom-color: transparent;
+}
+
+/* ---------- Boş durum ---------- */
+.empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.drop-card {
+  background: var(--page);
+  border: 1.5px dashed #c9c4b8;
+  border-radius: 16px;
+  padding: 52px 56px 40px;
+  text-align: center;
+  max-width: 560px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.drop-card.over { border-color: var(--red); background: #fffdfa; }
+.drop-mark {
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 18px;
+  border-radius: 50%;
+  background: var(--red-soft);
+  color: var(--red);
+  font-size: 25px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.drop-card h1 { font-family: var(--serif); font-size: 27px; font-weight: 600; margin-bottom: 10px; }
+.drop-card p { font-size: 13.5px; color: var(--muted); line-height: 1.55; margin-bottom: 22px; }
+.pick-btn {
+  background: var(--ink);
+  color: #fff;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 11px 26px;
+  border-radius: 9px;
+  cursor: pointer;
+  font-family: var(--ui);
+}
+.pick-btn:hover { background: var(--ink-soft); }
+.samples { margin-top: 26px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; }
+.samples-label { font-size: 12px; color: var(--muted); }
+.chip {
+  font-size: 12px;
+  border: 1px solid #d8d4ca;
+  background: transparent;
+  color: var(--text);
+  border-radius: 99px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-family: var(--ui);
+}
+.chip:hover { border-color: var(--red); color: var(--red); }
+
+/* ---------- Düzenleme kutusu ---------- */
+.editor {
+  position: fixed;
+  z-index: 50;
+  width: 320px;
+  background: var(--page);
+  border-radius: 12px;
+  box-shadow: 0 4px 10px rgba(20, 18, 14, 0.12), 0 18px 50px rgba(20, 18, 14, 0.25);
+  padding: 12px;
+  border-top: 3px solid var(--red);
+}
+.editor textarea {
+  width: 100%;
+  font-family: var(--ui);
+  font-size: 14px;
+  line-height: 1.45;
+  border: 1px solid #ddd9cf;
+  border-radius: 8px;
+  padding: 9px 10px;
+  resize: none;
+  min-height: 38px;
+  max-height: 180px;
+}
+.editor textarea:focus { outline: none; border-color: var(--red); }
+.editor-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.field { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
+.field input[type="number"] {
+  width: 58px;
+  height: 30px;
+  border: 1px solid #ddd9cf;
+  border-radius: 7px;
+  padding: 0 6px;
+  font-size: 13px;
+  font-family: var(--ui);
+}
+.field input[type="color"] {
+  width: 34px;
+  height: 30px;
+  border: 1px solid #ddd9cf;
+  border-radius: 7px;
+  padding: 2px;
+  background: var(--page);
+  cursor: pointer;
+}
+.opt-btn {
+  width: 30px;
+  height: 30px;
+  border: 1px solid #ddd9cf;
+  background: var(--page);
+  border-radius: 7px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--muted);
+  font-family: var(--ui);
+}
+.opt-btn.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+.editor select {
+  height: 30px;
+  border: 1px solid #ddd9cf;
+  border-radius: 7px;
+  font-size: 12.5px;
+  background: var(--page);
+  font-family: var(--ui);
+  padding: 0 4px;
+}
+.editor-actions { justify-content: flex-end; }
+.ghost-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 6px 8px;
+  font-family: var(--ui);
+}
+.ghost-btn:hover { color: var(--text); }
+#editorRevert { color: var(--red); }
+.apply-btn {
+  background: var(--red);
+  color: #fff;
+  border: none;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: var(--ui);
+}
+.apply-btn:hover { filter: brightness(1.08); }
+
+/* ---------- İpucu & sürükleme ---------- */
+.hint {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: #e8e7e3;
+  font-size: 12.5px;
+  padding: 9px 8px 9px 16px;
+  border-radius: 99px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 8px 26px rgba(20, 18, 14, 0.3);
+}
+.hint b { color: #fff; }
+.hint button {
+  background: transparent;
+  border: none;
+  color: #9a9da8;
+  font-size: 16px;
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+.hint button:hover { color: #fff; background: var(--ink-soft); }
+.drag-veil {
+  position: fixed;
+  inset: 10px;
+  z-index: 100;
+  border: 2.5px dashed var(--red);
+  border-radius: 18px;
+  background: rgba(233, 230, 223, 0.86);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--serif);
+  font-size: 30px;
+  color: var(--red);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .editor { animation: pop 0.14s ease-out; }
+  @keyframes pop {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: none; }
+  }
+}
+@media (max-width: 640px) {
+  .filename, .samples { display: none; }
+  .editor { width: min(320px, calc(100vw - 20px)); }
+}

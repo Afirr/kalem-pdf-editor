@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kalem — PDF Metin Düzenleyici</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <header class="toolbar">
+    <div class="brand">Kalem<span class="brand-dot">.</span></div>
+    <div class="filename" id="filename" hidden></div>
+    <div class="toolbar-group" id="zoomGroup" hidden>
+      <button class="tbtn" id="zoomOut" title="Uzaklaş">−</button>
+      <span class="zoom-label" id="zoomLabel">100%</span>
+      <button class="tbtn" id="zoomIn" title="Yakınlaş">+</button>
+      <button class="tbtn tbtn-text" id="zoomFit" title="Sayfayı genişliğe sığdır">Sığdır</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="toolbar-group" id="actionGroup" hidden>
+      <span class="edit-count" id="editCount" hidden></span>
+      <button class="tbtn tbtn-text" id="resetBtn">Sıfırla</button>
+      <button class="tbtn tbtn-text" id="newBtn" title="Başka bir PDF aç">Yeni PDF</button>
+      <button class="download-btn" id="downloadBtn">PDF'i İndir</button>
+    </div>
+  </header>
+
+  <main class="workspace" id="workspace">
+    <!-- Boş durum -->
+    <section class="empty" id="emptyState">
+      <div class="drop-card" id="dropCard">
+        <div class="drop-mark" aria-hidden="true">✎</div>
+        <h1>PDF'ini aç, metne tıkla, düzelt.</h1>
+        <p>Dosyayı buraya sürükle ya da bilgisayarından seç. Düzelttiğin<br />metinler aynı yerde, aynı boyutta yeni PDF'e işlenir.</p>
+        <button class="pick-btn" id="pickBtn">PDF Seç</button>
+      </div>
+    </section>
+
+    <!-- Sayfalar -->
+    <div class="pages" id="pages"></div>
+  </main>
+
+  <!-- Düzenleme kutusu -->
+  <div class="editor" id="editor" hidden>
+    <textarea id="editorText" rows="1" spellcheck="false"></textarea>
+    <div class="editor-row">
+      <label class="field" title="Punto">
+        <span>Boyut</span>
+        <input type="number" id="editorSize" min="4" max="120" step="0.5" />
+      </label>
+      <label class="field" title="Yazı rengi">
+        <span>Renk</span>
+        <input type="color" id="editorColor" />
+      </label>
+      <button class="opt-btn" id="editorBold" title="Kalın">K</button>
+      <select id="editorFont" title="Yazı tipi">
+        <option value="sans">Sans</option>
+        <option value="serif">Serif</option>
+      </select>
+    </div>
+    <div class="editor-row editor-actions">
+      <button class="ghost-btn" id="editorRevert" hidden>Orijinale dön</button>
+      <span class="spacer"></span>
+      <button class="ghost-btn" id="editorCancel">Vazgeç</button>
+      <button class="apply-btn" id="editorApply">Uygula</button>
+    </div>
+  </div>
+
+  <div class="hint" id="hint" hidden>
+    <span>Düzeltmek istediğin metne tıkla → yaz → <b>Uygula</b>. Bitince sağ üstten PDF'i indir.</span>
+    <button id="hintClose" aria-label="Kapat">×</button>
+  </div>
+
+  <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden />
+  <div class="drag-veil" id="dragVeil" hidden>Bırak, açalım</div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
