@@ -37,14 +37,17 @@ export async function bake(bytes, textEdits, areas) {
   for (const rec of textEdits.values()) {
     const page = doc.getPage(rec.meta.page);
 
-    // Orijinal tek satırlık glifleri her zaman gizle (yeni boyuttan bağımsız)
-    page.drawRectangle({
-      x: rec.meta.x - 1.5,
-      y: rec.meta.yBase - rec.meta.fs * 0.3,
-      width: rec.meta.w + 3,
-      height: rec.meta.fs * 1.35,
-      color: hexToRgb(rec.bg),
-    });
+    // Orijinal tek satırlık glifleri her zaman gizle (yeni boyuttan bağımsız).
+    // "Metin Ekle" ile oluşturulan kutularda örtülecek orijinal içerik yoktur.
+    if (!rec.meta.custom) {
+      page.drawRectangle({
+        x: rec.meta.x - 1.5,
+        y: rec.meta.yBase - rec.meta.fs * 0.3,
+        width: rec.meta.w + 3,
+        height: rec.meta.fs * 1.35,
+        color: hexToRgb(rec.bg),
+      });
+    }
 
     if (!rec.text) continue; // silinmiş: sadece kapat, yeniden yazma
 

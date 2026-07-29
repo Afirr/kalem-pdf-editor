@@ -222,6 +222,7 @@ body {
   user-select: none;
 }
 .page-wrap canvas { display: block; }
+.placing-text .page-wrap, .placing-text .page-wrap canvas { cursor: text; }
 .page-num {
   position: absolute;
   top: 6px;

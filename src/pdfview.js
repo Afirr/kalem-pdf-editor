@@ -102,6 +102,9 @@ async function renderPage(num, container, doc) {
     renderTextItem(wrap, pageInfo, meta);
   });
 
+  // ---- Kullanıcının "Metin Ekle" ile eklediği metin kutuları ----
+  (state.customTexts.get(pageIdx) || []).forEach((meta) => renderTextItem(wrap, pageInfo, meta));
+
   // ---- Görsel öğeleri (otomatik algılanan) ----
   const regions = await detectImageRegions(page);
   regions.forEach((region, index) => {
@@ -126,6 +129,16 @@ function mulMat(s, c) {
 
 function rectsOverlap(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+// Kesişim / birleşim oranı (0-1): iki dikdörtgenin ne kadar aynı yeri kapladığını ölçer.
+function rectIou(a, b) {
+  const ix0 = Math.max(a.x, b.x), iy0 = Math.max(a.y, b.y);
+  const ix1 = Math.min(a.x + a.w, b.x + b.w), iy1 = Math.min(a.y + a.h, b.y + b.h);
+  const iw = Math.max(0, ix1 - ix0), ih = Math.max(0, iy1 - iy0);
+  const inter = iw * ih;
+  if (inter <= 0) return 0;
+  const union = a.w * a.h + b.w * b.h - inter;
+  return union > 0 ? inter / union : 0;
 }
 function unionRect(a, b) {
   const x0 = Math.min(a.x, b.x), y0 = Math.min(a.y, b.y);
@@ -198,15 +211,17 @@ function detectImageRegions(page) {
         }
       }
     }
-    // Bir görselin sınırına yakın boyutta ve onunla örtüşen çizgi-yollarını
-    // (dekoratif halka/çerçeve) görselin bölgesine katar — aksi hâlde görsel
-    // taşındığında halka eski yerinde kalır.
+    // Bir görselle neredeyse aynı yeri kaplayan (IOU yüksek) çizgi-yollarını
+    // (fotoğrafın hemen kenarına çizilmiş dekoratif halka/çerçeve gibi) görselin
+    // bölgesine katar. Eşik yüksek tutulur: sayfadaki uzak/büyük bir kart
+    // çerçevesi veya ilgisiz bir süsleme yanlışlıkla görsele eklenmesin —
+    // aksi hâlde algılanan alan gereğinden büyür ve etraftaki metni de kapsar.
     const PAD = 2;
+    const baseImages = rawImages.slice();
     for (const st of rawStrokes) {
-      for (const im of rawImages) {
-        if (!rectsOverlap(st, im)) continue;
-        const ratioW = st.w / im.w, ratioH = st.h / im.h;
-        if (ratioW < 0.5 || ratioW > 2.5 || ratioH < 0.5 || ratioH > 2.5) continue;
+      for (const im of baseImages) {
+        const iou = rectIou(st, im);
+        if (iou < 0.6) continue;
         rawImages.push({ x: st.x - PAD, y: st.y - PAD, w: st.w + PAD * 2, h: st.h + PAD * 2 });
         break;
       }

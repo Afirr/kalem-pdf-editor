@@ -2,10 +2,10 @@
 // köşeden yeniden boyutlandırma (metin + otomatik algılanan görsel), geri al/ileri al.
 import {
   openPdf, renderAll, fitScale, sampleTextColors, sampleBgAround,
-  cropToPng, refreshItem, textBoxScreenRect, imageBoxScreenRect,
+  cropToPng, refreshItem, renderTextItem, textBoxScreenRect, imageBoxScreenRect,
 } from './pdfview.js';
 import {
-  state, syncText, syncImage, editCount, resetAll,
+  state, textKey, syncText, syncImage, editCount, resetAll,
   pushUndo, undo, redo, canUndo, canRedo,
 } from './state.js';
 import { bake } from './export.js';
@@ -16,7 +16,7 @@ const els = {
   dropCard: $('dropCard'), pickBtn: $('pickBtn'), fileInput: $('fileInput'),
   filename: $('filename'), zoomGroup: $('zoomGroup'), toolGroup: $('toolGroup'),
   actionGroup: $('actionGroup'),
-  undoBtn: $('undoBtn'), redoBtn: $('redoBtn'),
+  undoBtn: $('undoBtn'), redoBtn: $('redoBtn'), addTextBtn: $('addTextBtn'),
   zoomIn: $('zoomIn'), zoomOut: $('zoomOut'), zoomFit: $('zoomFit'), zoomLabel: $('zoomLabel'),
   editCount: $('editCount'), resetBtn: $('resetBtn'), newBtn: $('newBtn'), downloadBtn: $('downloadBtn'),
   propertyBar: $('propertyBar'),
@@ -251,6 +251,7 @@ function commitTextEditing() {
   state.editingDraft = null;
   editSnapshot = null;
   syncText(rec);
+  if (pruneIfEmptyCustom(key)) { closePropertyBar(); updateCount(); return; }
   refreshItem(key);
   updateCount();
   if (state.selected.has(key)) openPropertyBarForSelection();
@@ -265,9 +266,61 @@ function cancelTextEditing() {
   state.editingDraft = null;
   editSnapshot = null;
   syncText(rec);
+  if (pruneIfEmptyCustom(key)) { closePropertyBar(); updateCount(); return; }
   refreshItem(key);
   updateCount();
   if (state.selected.has(key)) openPropertyBarForSelection();
+}
+
+// ---------- Yeni metin ekleme ----------
+// "Metin Ekle" ile PDF'in orijinal içeriğinde karşılığı olmayan, kullanıcının
+// sayfaya tıklayarak oluşturduğu metin kutuları. state.customTexts'e kaydedilen
+// taslak meta, gerçek metinlerle aynı renderTextItem/textEdits akışını kullanır.
+let addTextMode = false;
+function setAddTextMode(on) {
+  addTextMode = on;
+  els.addTextBtn.classList.toggle('on', on);
+  els.workspace.classList.toggle('placing-text', on);
+}
+els.addTextBtn.addEventListener('click', () => setAddTextMode(!addTextMode));
+
+function placeNewText(pageIdx, wrap, evt) {
+  const pageInfo = state.pageInfos.get(pageIdx);
+  if (!pageInfo) return;
+  evt.preventDefault(); // varsayılan mousedown odak davranışı, aşağıdaki .focus()'u hemen çalmasın
+  setAddTextMode(false);
+  const rect = wrap.getBoundingClientRect();
+  const s = pageInfo.scale;
+  const fs = 16;
+  const x = (evt.clientX - rect.left) / s;
+  const yBase = pageInfo.pdfH - (evt.clientY - rect.top) / s - fs * 0.87;
+  const index = state.nextCustomTextIndex++;
+  const meta = { page: pageIdx, index, str: '', x, yBase, w: 24, fs, bold: false, serif: false, custom: true };
+
+  pushUndo();
+  const list = state.customTexts.get(pageIdx) || [];
+  list.push(meta);
+  state.customTexts.set(pageIdx, list);
+
+  renderTextItem(wrap, pageInfo, meta);
+  startTextEditing(textKey(pageIdx, index), null);
+}
+
+// Düzenleme bittiğinde, kullanıcı hiçbir şey yazmadan bıraktığı yeni metin
+// taslağını tamamen kaldırır — boş, görünmez bir kutu kalıcı olarak asılı kalmasın.
+// Bir şey silindiyse true döner (çağıran normal yenileme/özellik-çubuğu akışını atlar).
+function pruneIfEmptyCustom(key) {
+  const ref = state.itemRefs.get(key);
+  if (!ref || ref.kind !== 'text' || !ref.meta.custom || state.textEdits.has(key)) return false;
+  const list = state.customTexts.get(ref.meta.page);
+  if (list) {
+    const idx = list.findIndex((m) => m.index === ref.meta.index);
+    if (idx !== -1) list.splice(idx, 1);
+  }
+  state.itemRefs.delete(key);
+  state.selected.delete(key);
+  ref.wrap.querySelectorAll(`[data-key="${CSS.escape(key)}"]`).forEach((n) => n.remove());
+  return true;
 }
 
 // ---------- Özellik çubuğu ----------
@@ -347,6 +400,7 @@ function deleteItem(key) {
     const rec = getOrCreateTextRecord(key);
     rec.text = '';
     syncText(rec);
+    if (pruneIfEmptyCustom(key)) return;
   } else {
     const rec = getOrCreateImageRecord(key);
     rec.hidden = true;
@@ -372,6 +426,7 @@ els.pbRevert.addEventListener('click', () => {
   if (ref.kind === 'text') {
     if (state.editingKey === key) { state.editingKey = null; state.editingDraft = null; editSnapshot = null; }
     state.textEdits.delete(key);
+    if (pruneIfEmptyCustom(key)) { closePropertyBar(); updateCount(); return; }
   } else {
     state.areas.delete(key);
   }
@@ -619,7 +674,8 @@ state.onTextPointerDown = (fullMeta, key, el, evt) => {
 state.onImagePointerDown = (meta, key, el, evt) => {
   beginItemGesture(key, evt);
 };
-state.onPageMouseDown = () => {
+state.onPageMouseDown = (pageIdx, wrap, evt) => {
+  if (addTextMode) { placeNewText(pageIdx, wrap, evt); return; }
   clearSelectionUI();
 };
 state.onResizeHandleDown = (key, evt) => {
@@ -639,7 +695,7 @@ els.workspace.addEventListener('mousedown', (e) => {
 window.addEventListener('keydown', (e) => {
   const inField = ['TEXTAREA', 'INPUT', 'SELECT'].includes(document.activeElement?.tagName)
     || document.activeElement?.isContentEditable;
-  if (e.key === 'Escape') { clearSelectionUI(); return; }
+  if (e.key === 'Escape') { setAddTextMode(false); clearSelectionUI(); return; }
   if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); download(); return; }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !inField) {
     e.preventDefault();

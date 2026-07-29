@@ -11,6 +11,12 @@ export const state = {
   selected: new Set(),  // seçili anahtarlar (metin + görsel karışık olabilir)
   history: { undo: [], redo: [] }, // geri al / ileri al yığınları (bkz. pushUndo/undo/redo)
 
+  // Kullanıcının "Metin Ekle" ile sayfaya eklediği, PDF'in orijinal içeriğinde
+  // karşılığı olmayan metin kutularının taslak (meta) listesi: sayfa indeksi ->
+  // meta[]. Her render'da gerçek metinlerle birlikte yeniden çizilir.
+  customTexts: new Map(),
+  nextCustomTextIndex: 1000000,
+
   // Son çizimde her anahtarın hangi sayfa/kutuya ait olduğunu tutar (main.js sürükleme,
   // yeniden boyutlandırma ve düzenleme sırasında bu kayıtlardan sayfa bilgisine ulaşır).
   itemRefs: new Map(),
@@ -85,6 +91,8 @@ export function resetAll() {
   state.selected.clear();
   state.itemRefs.clear();
   state.pageInfos.clear();
+  state.customTexts.clear();
+  state.nextCustomTextIndex = 1000000;
   state.editingKey = null;
   state.editingDraft = null;
   state.history.undo.length = 0;
@@ -98,12 +106,14 @@ function snapshot() {
   return {
     textEdits: [...state.textEdits.entries()].map(([k, r]) => [k, { ...r }]),
     areas: [...state.areas.entries()].map(([k, r]) => [k, { ...r }]),
+    customTexts: [...state.customTexts.entries()].map(([k, list]) => [k, list.map((m) => ({ ...m }))]),
   };
 }
 
 function restoreSnapshot(snap) {
   state.textEdits = new Map(snap.textEdits.map(([k, r]) => [k, { ...r }]));
   state.areas = new Map(snap.areas.map(([k, r]) => [k, { ...r }]));
+  state.customTexts = new Map(snap.customTexts.map(([k, list]) => [k, list.map((m) => ({ ...m }))]));
 }
 
 const HISTORY_LIMIT = 60;
