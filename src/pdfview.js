@@ -174,55 +174,117 @@ function detectImageRegions(page) {
     const OPS = pdfjsLib.OPS;
     const { fnArray, argsArray } = await page.getOperatorList();
     const strokeOps = new Set([OPS.stroke, OPS.closeStroke]);
+    const fillOps = new Set([
+      OPS.fill, OPS.eoFill, OPS.fillStroke, OPS.eoFillStroke,
+      OPS.closeFillStroke, OPS.closeEOFillStroke,
+    ]);
     let ctm = [1, 0, 0, 1, 0, 0];
-    const stack = [];
+    const ctmStack = [];
+    let lineWidth = 1; // PDF varsayılanı; OPS.setLineWidth ile güncellenir
     const rawImages = [];
     const rawStrokes = [];
+    // Tasarım araçları (Figma/Canva vb.) bir görseli ve etrafına çizdiği
+    // dekoratif halka/çerçeve/köşe süsünü genelde tek bir "Figure" işaretli-
+    // içerik (marked content) bloğunda dışa aktarır. Bu grup bilgisini
+    // kullanmak, salt geometrik yakınlık tahmininden çok daha güvenilir.
+    const figureStack = [];
+    const figureRegions = [];
+
+    const bboxFromMinMax = (minMax) => {
+      const [mx0, my0, mx1, my1] = minMax;
+      const c = [[mx0, my0], [mx1, my0], [mx0, my1], [mx1, my1]].map(([x, y]) => [
+        ctm[0] * x + ctm[2] * y + ctm[4],
+        ctm[1] * x + ctm[3] * y + ctm[5],
+      ]);
+      const xs = c.map((p) => p[0]), ys = c.map((p) => p[1]);
+      const x = Math.min(...xs), y = Math.min(...ys);
+      return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+    };
+
     for (let i = 0; i < fnArray.length; i++) {
       const fn = fnArray[i];
-      if (fn === OPS.save) stack.push(ctm);
-      else if (fn === OPS.restore) ctm = stack.pop() || ctm;
-      else if (fn === OPS.transform) ctm = mulMat(argsArray[i], ctm);
-      else if (fn === OPS.paintImageXObject || fn === OPS.paintImageXObjectRepeat) {
+      if (fn === OPS.save) { ctmStack.push({ ctm, lineWidth }); continue; }
+      if (fn === OPS.restore) { ({ ctm, lineWidth } = ctmStack.pop() || { ctm, lineWidth }); continue; }
+      if (fn === OPS.transform) { ctm = mulMat(argsArray[i], ctm); continue; }
+      if (fn === OPS.setLineWidth) { lineWidth = argsArray[i][0]; continue; }
+      if (fn === OPS.setGState) {
+        // Çizgi kalınlığı doğrudan "w" operatörü yerine ExtGState ("gs") üzerinden
+        // "LW" anahtarıyla da ayarlanabilir — tasarım araçlarının dışa aktardığı
+        // PDF'lerde bu yaygın.
+        const entry = argsArray[i][0]?.find(([k]) => k === 'LW');
+        if (entry) lineWidth = entry[1];
+        continue;
+      }
+
+      if (fn === OPS.beginMarkedContentProps || fn === OPS.beginMarkedContent) {
+        // Yığın her zaman itilir (etiket ne olursa olsun) ki EMC ile derinlik
+        // senkron kalsın; yalnızca "Figure" için gerçek bir çerçeve tutulur.
+        figureStack.push(argsArray[i]?.[0] === 'Figure' ? { rects: [] } : null);
+        continue;
+      }
+      if (fn === OPS.endMarkedContent) {
+        const frame = figureStack.pop();
+        if (frame && frame.rects.length) {
+          const u = frame.rects.reduce(unionRect);
+          if (u.w > 4 && u.h > 4) figureRegions.push(u);
+        }
+        continue;
+      }
+
+      if (fn === OPS.paintImageXObject || fn === OPS.paintImageXObjectRepeat) {
         const c = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => [
           ctm[0] * x + ctm[2] * y + ctm[4],
           ctm[1] * x + ctm[3] * y + ctm[5],
         ]);
         const xs = c.map((p) => p[0]), ys = c.map((p) => p[1]);
         const x = Math.min(...xs), y = Math.min(...ys);
-        const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
-        if (w > 4 && h > 4) rawImages.push({ x, y, w, h });
-      } else if (fn === OPS.constructPath) {
+        const r = { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+        if (r.w > 4 && r.h > 4) {
+          rawImages.push(r);
+          figureStack[figureStack.length - 1]?.rects.push(r);
+        }
+        continue;
+      }
+
+      if (fn === OPS.constructPath) {
         // args: [boyaOperatörü, alt-yol verisi, minMax] — pdf.js her yolun
-        // sınır kutusunu zaten hesaplayıp veriyor. Yalnızca çizgi (stroke) ile
-        // çizilmiş yolları aday alıyoruz: fotoğrafların etrafına çizilen
-        // dekoratif halka/çerçeveler genelde böyle, dolgu değil.
+        // sınır kutusunu zaten hesaplayıp veriyor. minMax, YOLUN kendisinin
+        // (çizginin orta hattının) sınırıdır; çizili çizgi bunun ötesine de
+        // taşar, o yüzden çizgilerde kalınlığın yarısı kadar payla genişletiyoruz
+        // — aksi hâlde nesne taşınınca eski yerde ince bir kalıntı kalır.
         const [pathOp, , minMax] = argsArray[i];
-        if (strokeOps.has(pathOp) && minMax) {
-          const [mx0, my0, mx1, my1] = minMax;
-          const c = [[mx0, my0], [mx1, my0], [mx0, my1], [mx1, my1]].map(([x, y]) => [
-            ctm[0] * x + ctm[2] * y + ctm[4],
-            ctm[1] * x + ctm[3] * y + ctm[5],
-          ]);
-          const xs = c.map((p) => p[0]), ys = c.map((p) => p[1]);
-          const x = Math.min(...xs), y = Math.min(...ys);
-          const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
-          if (w > 4 && h > 4) rawStrokes.push({ x, y, w, h });
+        if (!minMax || (!strokeOps.has(pathOp) && !fillOps.has(pathOp))) continue;
+        let r = bboxFromMinMax(minMax);
+        if (r.w <= 2 || r.h <= 2) continue;
+        if (strokeOps.has(pathOp)) {
+          const scale = (Math.hypot(ctm[0], ctm[1]) + Math.hypot(ctm[2], ctm[3])) / 2;
+          // Yarım çizgi kalınlığı + kenar yumuşatmanın (anti-aliasing) taşırdığı
+          // birkaç pikseli de yutacak sabit bir güvenlik payı.
+          const pad = Math.max(1, (lineWidth / 2) * scale) + 1;
+          r = { x: r.x - pad, y: r.y - pad, w: r.w + pad * 2, h: r.h + pad * 2 };
+        }
+        const top = figureStack[figureStack.length - 1];
+        if (top) {
+          top.rects.push(r); // aktif bir Figure'ın parçası: onun bölgesine katılır
+        } else if (strokeOps.has(pathOp)) {
+          rawStrokes.push(r); // Figure dışı çizgi: yalnız IOU ile eşleşirse birleştirilir (yedek yöntem)
+        } else if (r.w <= 40 && r.h <= 40) {
+          rawImages.push(r); // Figure dışı küçük dolgu şekli: muhtemelen bağımsız bir ikon/sembol
         }
       }
     }
-    // Bir görselle neredeyse aynı yeri kaplayan (IOU yüksek) çizgi-yollarını
-    // (fotoğrafın hemen kenarına çizilmiş dekoratif halka/çerçeve gibi) görselin
-    // bölgesine katar. Eşik yüksek tutulur: sayfadaki uzak/büyük bir kart
-    // çerçevesi veya ilgisiz bir süsleme yanlışlıkla görsele eklenmesin —
-    // aksi hâlde algılanan alan gereğinden büyür ve etraftaki metni de kapsar.
-    const PAD = 2;
+
+    for (const r of figureRegions) rawImages.push(r);
+
+    // İşaretli-içerik yapısı olmayan belgeler için geometrik yedek: bir görselle
+    // neredeyse aynı yeri kaplayan (IOU yüksek) çizgi-yolları da katılır. Eşik
+    // yüksek tutulur: sayfadaki uzak/büyük bir kart çerçevesi yanlışlıkla
+    // görsele eklenip alanı büyütmesin.
     const baseImages = rawImages.slice();
     for (const st of rawStrokes) {
       for (const im of baseImages) {
-        const iou = rectIou(st, im);
-        if (iou < 0.6) continue;
-        rawImages.push({ x: st.x - PAD, y: st.y - PAD, w: st.w + PAD * 2, h: st.h + PAD * 2 });
+        if (rectIou(st, im) < 0.6) continue;
+        rawImages.push(st); // st, çizgi kalınlığı payı zaten eklenmiş hâlde
         break;
       }
     }
