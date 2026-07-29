@@ -1,35 +1,39 @@
-// Uygulama durumu: PDF, metin düzeltmeleri, taşınan/gizlenen görsel alanlar, seçim.
+// Uygulama durumu: PDF, metin düzeltmeleri, otomatik algılanan görsellerdeki
+// değişiklikler, seçim, satır içi düzenleme ve geri al/ileri al geçmişi.
 export const state = {
   doc: null,
   bytes: null,
   name: '',
   scale: 1.3,
 
-  textEdits: new Map(), // "t:sayfa:indeks" -> kayıt (yalnızca değiştirilmiş öğeler)
-  areas: new Map(),     // "a:id" -> kayıt (yakalanmış görsel/logo alanları)
-  selected: new Set(),  // seçili anahtarlar (metin + alan karışık olabilir)
-  nextAreaId: 1,
+  textEdits: new Map(), // "t:sayfa:indeks" -> kayıt (yalnızca değiştirilmiş metinler)
+  areas: new Map(),     // "i:sayfa:indeks" -> kayıt (yalnızca değiştirilmiş/taşınmış görseller)
+  selected: new Set(),  // seçili anahtarlar (metin + görsel karışık olabilir)
   history: { undo: [], redo: [] }, // geri al / ileri al yığınları (bkz. pushUndo/undo/redo)
 
-  // Son çizimde her anahtarın hangi sayfa/kutuya ait olduğunu tutar (main.js sürükleme
-  // ve düzenleme sırasında bu kayıtlardan sayfa bilgisine ulaşır).
+  // Son çizimde her anahtarın hangi sayfa/kutuya ait olduğunu tutar (main.js sürükleme,
+  // yeniden boyutlandırma ve düzenleme sırasında bu kayıtlardan sayfa bilgisine ulaşır).
   itemRefs: new Map(),
-  // Sayfa indeksi -> {canvas, dpr, pdfH, scale, wrap, page} — metin öğesi olmayan
-  // sayfalarda bile alan yakalama aracının çalışabilmesi için.
+  // Sayfa indeksi -> {canvas, dpr, pdfH, scale, wrap, page}
   pageInfos: new Map(),
+
+  // Şu an satır içi (imleçle) düzenlenen metin öğesinin anahtarı, yoksa null.
+  editingKey: null,
+  // editingKey doluyken, henüz "dirty" olmadığı için textEdits'e eklenmemiş taslak kayıt.
+  editingDraft: null,
 
   // main.js tarafından atanan olay geri çağrıları
   onTextPointerDown: null,   // (fullMeta, key, el, evt) => void
-  onAreaPointerDown: null,   // (rec, el, evt) => void
+  onImagePointerDown: null,  // (meta, key, el, evt) => void
   onPageMouseDown: null,     // (pageIndex, wrapEl, evt) => void
-  onResizeHandleDown: null,  // (rec, corner, evt) => void
+  onResizeHandleDown: null,  // (key, evt) => void
 };
 
 export function textKey(page, index) {
   return `t:${page}:${index}`;
 }
-export function areaKey(id) {
-  return `a:${id}`;
+export function imageKey(page, index) {
+  return `i:${page}:${index}`;
 }
 
 const EPS = 0.02;
@@ -54,6 +58,22 @@ export function syncText(rec) {
   return key;
 }
 
+export function isImageDirty(rec) {
+  return (
+    Math.abs(rec.dx) > EPS ||
+    Math.abs(rec.dy) > EPS ||
+    Math.abs(rec.scale - 1) > EPS ||
+    rec.hidden
+  );
+}
+
+export function syncImage(rec) {
+  const key = imageKey(rec.meta.page, rec.meta.index);
+  if (isImageDirty(rec)) state.areas.set(key, rec);
+  else state.areas.delete(key);
+  return key;
+}
+
 export function editCount() {
   return state.textEdits.size + state.areas.size;
 }
@@ -64,7 +84,8 @@ export function resetAll() {
   state.selected.clear();
   state.itemRefs.clear();
   state.pageInfos.clear();
-  state.nextAreaId = 1;
+  state.editingKey = null;
+  state.editingDraft = null;
   state.history.undo.length = 0;
   state.history.redo.length = 0;
 }

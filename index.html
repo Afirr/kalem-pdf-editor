@@ -17,9 +17,6 @@
       <button class="tbtn tbtn-text" id="zoomFit" title="Sayfayı genişliğe sığdır">Sığdır</button>
     </div>
     <div class="toolbar-group" id="toolGroup" hidden>
-      <button class="tbtn tbtn-text" id="areaToolBtn" title="Bir bölgeyi (görsel, logo, imza…) yakala ve taşınabilir yap">
-        ⬚ Görsel/Logo Taşı
-      </button>
       <button class="tbtn" id="undoBtn" title="Geri al (Ctrl+Z)" disabled>↺</button>
       <button class="tbtn" id="redoBtn" title="İleri al (Ctrl+Shift+Z)" disabled>↻</button>
     </div>
@@ -35,7 +32,7 @@
   <!-- Sabit özellik çubuğu: seçili öğeye göre içerik değişir, hiçbir zaman metnin yanında açılmaz -->
   <div class="propertybar" id="propertyBar" hidden>
     <div class="pb-row" id="pbTextRow" hidden>
-      <textarea id="pbText" rows="1" spellcheck="false" placeholder="Metin"></textarea>
+      <span class="pb-label">Metin — belgede doğrudan düzenle</span>
       <label class="field" title="Punto">
         <span>Boyut</span>
         <input type="number" id="pbSize" min="4" max="140" step="0.5" />
@@ -62,7 +59,6 @@
     </div>
     <div class="pb-row pb-actions">
       <button class="ghost-btn" id="pbRevert" hidden>Orijinale dön</button>
-      <button class="ghost-btn" id="pbRemove" hidden>Kaldır</button>
       <span class="spacer"></span>
       <button class="ghost-btn danger" id="pbDelete">Sil</button>
       <button class="apply-btn" id="pbClose">Kapat</button>
@@ -75,7 +71,7 @@
       <div class="drop-card" id="dropCard">
         <div class="drop-mark" aria-hidden="true">✎</div>
         <h1>PDF'ini aç, metne tıkla, düzelt.</h1>
-        <p>Dosyayı buraya sürükle ya da bilgisayarından seç. Metinleri ve<br />görselleri sürükleyerek taşıyabilir, üstteki çubuktan biçimlendirebilirsin.</p>
+        <p>Dosyayı buraya sürükle ya da bilgisayarından seç. Metne tıkla, doğrudan<br />düzenle. Görselleri ve logoları otomatik algılar, sürükleyip büyütebilirsin.</p>
         <button class="pick-btn" id="pickBtn">PDF Seç</button>
       </div>
     </section>
@@ -85,7 +81,7 @@
   </main>
 
   <div class="hint" id="hint" hidden>
-    <span>Metne <b>tıkla</b> → üstten düzenle. <b>Sürükle</b> → taşı. Birden fazlasını <b>Shift+tıkla</b> ile seçip birlikte taşı.</span>
+    <span>Metne <b>tıkla</b> → doğrudan yaz. <b>Sürükle</b> → taşı. <b>Köşeden çek</b> → büyüt/küçült. Görseller otomatik algılanır.</span>
     <button id="hintClose" aria-label="Kapat">×</button>
   </div>
 

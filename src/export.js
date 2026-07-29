@@ -61,30 +61,30 @@ export async function bake(bytes, textEdits, areas) {
     });
   }
 
-  // ---- Alanlar (görsel/logo) ----
+  // ---- Görseller (otomatik algılanan logolar/resimler) ----
   const imgCache = new Map();
-  for (const rec of areas.values()) {
-    const page = doc.getPage(rec.page);
+  for (const [key, rec] of areas.entries()) {
+    const page = doc.getPage(rec.meta.page);
 
     page.drawRectangle({
-      x: rec.x - 0.5,
-      y: rec.y - 0.5,
-      width: rec.w + 1,
-      height: rec.h + 1,
+      x: rec.meta.x - 0.5,
+      y: rec.meta.y - 0.5,
+      width: rec.meta.w + 1,
+      height: rec.meta.h + 1,
       color: hexToRgb(rec.bg),
     });
 
-    if (rec.hidden) continue;
+    if (rec.hidden || !rec.png) continue; // png henüz kırpılmadıysa (nadir yarış durumu) yalnızca kapat
 
-    let img = imgCache.get(rec.key);
+    let img = imgCache.get(key);
     if (!img) {
       img = await doc.embedPng(rec.png);
-      imgCache.set(rec.key, img);
+      imgCache.set(key, img);
     }
-    const w = rec.w * rec.scale;
-    const h = rec.h * rec.scale;
-    const x = rec.x + rec.dx + (rec.w - w) / 2;
-    const y = rec.y + rec.dy + (rec.h - h) / 2;
+    const w = rec.meta.w * rec.scale;
+    const h = rec.meta.h * rec.scale;
+    const x = rec.meta.x + rec.dx + (rec.meta.w - w) / 2;
+    const y = rec.meta.y + rec.dy + (rec.meta.h - h) / 2;
     page.drawImage(img, { x, y, width: w, height: h });
   }
 

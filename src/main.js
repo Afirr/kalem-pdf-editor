@@ -1,11 +1,11 @@
-// Kalem — arayüz bağlantıları: seçim, sürükle-taşı, sabit özellik çubuğu, alan yakalama
+// Kalem — arayüz bağlantıları: satır içi metin düzenleme, sürükle-taşı,
+// köşeden yeniden boyutlandırma (metin + otomatik algılanan görsel), geri al/ileri al.
 import {
   openPdf, renderAll, fitScale, sampleTextColors, sampleBgAround,
-  screenRectToPdf, cropToPng, refreshTextItem, refreshAreaItem, renderAreaItem,
-  refreshSelectionClass, removeItemDOM,
+  cropToPng, refreshItem, textBoxScreenRect, imageBoxScreenRect,
 } from './pdfview.js';
 import {
-  state, textKey, areaKey, syncText, editCount, resetAll,
+  state, syncText, syncImage, editCount, resetAll,
   pushUndo, undo, redo, canUndo, canRedo,
 } from './state.js';
 import { bake } from './export.js';
@@ -15,23 +15,22 @@ const els = {
   workspace: $('workspace'), pages: $('pages'), empty: $('emptyState'),
   dropCard: $('dropCard'), pickBtn: $('pickBtn'), fileInput: $('fileInput'),
   filename: $('filename'), zoomGroup: $('zoomGroup'), toolGroup: $('toolGroup'),
-  actionGroup: $('actionGroup'), areaToolBtn: $('areaToolBtn'),
+  actionGroup: $('actionGroup'),
   undoBtn: $('undoBtn'), redoBtn: $('redoBtn'),
   zoomIn: $('zoomIn'), zoomOut: $('zoomOut'), zoomFit: $('zoomFit'), zoomLabel: $('zoomLabel'),
   editCount: $('editCount'), resetBtn: $('resetBtn'), newBtn: $('newBtn'), downloadBtn: $('downloadBtn'),
   propertyBar: $('propertyBar'),
-  pbTextRow: $('pbTextRow'), pbText: $('pbText'), pbSize: $('pbSize'), pbColor: $('pbColor'),
-  pbBold: $('pbBold'), pbFont: $('pbFont'),
+  pbTextRow: $('pbTextRow'), pbSize: $('pbSize'), pbColor: $('pbColor'), pbBold: $('pbBold'), pbFont: $('pbFont'),
   pbAreaRow: $('pbAreaRow'), pbShrink: $('pbShrink'), pbGrow: $('pbGrow'), pbToggleHide: $('pbToggleHide'),
   pbMultiRow: $('pbMultiRow'), pbMultiLabel: $('pbMultiLabel'),
-  pbRevert: $('pbRevert'), pbRemove: $('pbRemove'), pbDelete: $('pbDelete'), pbClose: $('pbClose'),
+  pbRevert: $('pbRevert'), pbDelete: $('pbDelete'), pbClose: $('pbClose'),
   hint: $('hint'), hintClose: $('hintClose'), dragVeil: $('dragVeil'),
 };
 
 const round1 = (n) => Math.round(n * 10) / 10;
-let activeTextDraft = null; // { key, rec } — tek metin seçiliyken özellik çubuğuna bağlı taslak
-let areaArmed = false;
-let textUndoPushed = false; // bir metin düzenleme oturumunda geri-al kaydı yalnız ilk değişiklikte itilir
+let activeTextDraft = null; // { key, rec } — seçili metnin özellik çubuğuna bağlı kaydı
+let textUndoPushed = false; // bir düzenleme oturumunda geri-al kaydı yalnız ilk değişiklikte itilir
+let editSnapshot = null;    // satır içi düzenleme başlarken kaydın durumu (Escape ile iptal için)
 
 // ---------- PDF açma ----------
 async function loadFile(bytes, name) {
@@ -41,9 +40,8 @@ async function loadFile(bytes, name) {
     alert('Bu dosya açılamadı. Şifreli ya da bozuk bir PDF olabilir.\n\n' + err.message);
     return;
   }
-  revokeAllAreaUrls();
+  revokeAllImageUrls();
   resetAll();
-  setAreaArmed(false);
   els.empty.hidden = true;
   els.zoomGroup.hidden = false;
   els.toolGroup.hidden = false;
@@ -63,7 +61,7 @@ async function rerender() {
   if (state.selected.size) openPropertyBarForSelection();
 }
 
-function revokeAllAreaUrls() {
+function revokeAllImageUrls() {
   for (const rec of state.areas.values()) {
     if (rec.url) URL.revokeObjectURL(rec.url);
   }
@@ -108,38 +106,7 @@ els.zoomIn.addEventListener('click', () => setScale(state.scale + 0.15));
 els.zoomOut.addEventListener('click', () => setScale(state.scale - 0.15));
 els.zoomFit.addEventListener('click', () => setScale(fitScale(els.workspace.clientWidth - 120)));
 
-// ---------- Seçim ----------
-// Alan (görsel/logo) öğelerinin yeniden boyutlandırma tutamaçları yalnızca tam bir
-// renderAreaItem çağrısında oluşturulur; salt CSS sınıfı değişimi (refreshSelectionClass)
-// bunları eklemez/kaldırmaz. Bu yüzden seçim değiştiğinde alan öğeleri için tam yeniden
-// çizim, metin öğeleri için ucuz sınıf değişimi kullanılır.
-function refreshSelectionVisual(key) {
-  const ref = state.itemRefs.get(key);
-  if (!ref) return;
-  if (ref.kind === 'area') refreshAreaItem(key);
-  else refreshSelectionClass(key);
-}
-
-function selectOnly(key) {
-  const touched = new Set([...state.selected, key]);
-  state.selected.clear();
-  state.selected.add(key);
-  touched.forEach(refreshSelectionVisual);
-  openPropertyBarForSelection();
-}
-function toggleSelect(key) {
-  if (state.selected.has(key)) state.selected.delete(key);
-  else state.selected.add(key);
-  refreshSelectionVisual(key);
-  openPropertyBarForSelection();
-}
-function clearSelectionUI() {
-  const prev = [...state.selected];
-  state.selected.clear();
-  prev.forEach(refreshSelectionVisual);
-  closePropertyBar();
-}
-
+// ---------- Kayıt oluşturma (tembel) ----------
 function getOrCreateTextRecord(key) {
   const existing = state.textEdits.get(key);
   if (existing) return existing;
@@ -161,29 +128,149 @@ function getOrCreateTextRecord(key) {
   };
 }
 
+// Görsel kaydı senkron döner; PNG kırpma/örnekleme arka planda tamamlanıp
+// hazır olduğunda ilgili öğeyi kendiliğinden tazeler.
+function getOrCreateImageRecord(key) {
+  const existing = state.areas.get(key);
+  if (existing) return existing;
+  const ref = state.itemRefs.get(key);
+  const meta = ref.meta;
+  const rec = { meta, dx: 0, dy: 0, scale: 1, hidden: false, bg: '#ffffff', png: null, url: null };
+  populateImageAssets(key, rec, ref);
+  return rec;
+}
+
+async function populateImageAssets(key, rec, ref) {
+  const s = ref.pageInfo.scale;
+  const l = rec.meta.x * s;
+  const t = (ref.pageInfo.pdfH - rec.meta.y - rec.meta.h) * s;
+  const w = rec.meta.w * s;
+  const h = rec.meta.h * s;
+  const { bytes } = await cropToPng(ref.pageInfo, l, t, w, h);
+  rec.png = bytes;
+  rec.bg = sampleBgAround(ref.pageInfo, l, t, w, h);
+  rec.url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+  if (state.itemRefs.has(key)) refreshItem(key);
+}
+
 function getRecordForDrag(key) {
   const ref = state.itemRefs.get(key);
   if (!ref) return null;
-  return ref.kind === 'text' ? getOrCreateTextRecord(key) : state.areas.get(key);
+  return ref.kind === 'text' ? getOrCreateTextRecord(key) : getOrCreateImageRecord(key);
 }
 function applyRecord(key, rec) {
   const ref = state.itemRefs.get(key);
   if (!ref) return;
-  if (ref.kind === 'text') {
-    syncText(rec);
-    refreshTextItem(key);
-  } else {
-    refreshAreaItem(key);
+  if (ref.kind === 'text') syncText(rec); else syncImage(rec);
+  refreshItem(key);
+}
+
+// ---------- Seçim ----------
+function selectOnly(key) {
+  const touched = new Set([...state.selected, key]);
+  state.selected.clear();
+  state.selected.add(key);
+  touched.forEach(refreshItem);
+  openPropertyBarForSelection();
+}
+function toggleSelect(key) {
+  if (state.selected.has(key)) state.selected.delete(key);
+  else state.selected.add(key);
+  refreshItem(key);
+  openPropertyBarForSelection();
+}
+function clearSelectionUI() {
+  if (state.editingKey) commitTextEditing();
+  const prev = [...state.selected];
+  state.selected.clear();
+  prev.forEach(refreshItem);
+  closePropertyBar();
+}
+
+// ---------- Satır içi metin düzenleme ----------
+function placeCaretAt(el, evt) {
+  el.focus();
+  if (!evt) return;
+  let range = null;
+  try {
+    if (document.caretPositionFromPoint) {
+      const pos = document.caretPositionFromPoint(evt.clientX, evt.clientY);
+      if (pos) { range = document.createRange(); range.setStart(pos.offsetNode, pos.offset); range.collapse(true); }
+    } else if (document.caretRangeFromPoint) {
+      range = document.caretRangeFromPoint(evt.clientX, evt.clientY);
+    }
+  } catch { /* konum imleç yerleşimi için kritik değil */ }
+  if (range) {
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
   }
-  refreshSelectionClass(key);
+}
+
+function onEditableInput(e) {
+  const rec = state.editingDraft;
+  if (!rec) return;
+  if (!textUndoPushed) { pushUndo(); textUndoPushed = true; }
+  rec.text = e.target.textContent;
+  syncText(rec); // yalnız veri; DOM'a dokunmaz (imleç korunur)
+  els.pbRevert.hidden = !state.textEdits.has(state.editingKey);
+  updateCount();
+}
+function onEditableKeydown(e) {
+  if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); }
+  else if (e.key === 'Escape') { e.preventDefault(); cancelTextEditing(); }
+}
+function onEditableBlur() {
+  commitTextEditing();
+}
+
+function startTextEditing(key, evt) {
+  if (state.editingKey && state.editingKey !== key) commitTextEditing();
+  const rec = getOrCreateTextRecord(key);
+  editSnapshot = { ...rec };
+  textUndoPushed = false;
+  state.editingKey = key;
+  state.editingDraft = rec;
+
+  selectOnly(key); // seçim + özellik çubuğu; editingKey ayarlı olduğundan içerik contentEditable çizilir
+
+  const ref = state.itemRefs.get(key);
+  const contentEl = ref?.wrap.querySelector(`.titem.edited[data-key="${CSS.escape(key)}"]`);
+  if (!contentEl) return;
+  placeCaretAt(contentEl, evt);
+  contentEl.addEventListener('input', onEditableInput);
+  contentEl.addEventListener('keydown', onEditableKeydown);
+  contentEl.addEventListener('blur', onEditableBlur);
+}
+
+function commitTextEditing() {
+  const key = state.editingKey;
+  const rec = state.editingDraft;
+  if (!key || !rec) return;
+  state.editingKey = null;
+  state.editingDraft = null;
+  editSnapshot = null;
+  syncText(rec);
+  refreshItem(key);
+  updateCount();
+  if (state.selected.has(key)) openPropertyBarForSelection();
+}
+
+function cancelTextEditing() {
+  const key = state.editingKey;
+  const rec = state.editingDraft;
+  if (!key || !rec || !editSnapshot) return;
+  Object.assign(rec, editSnapshot);
+  state.editingKey = null;
+  state.editingDraft = null;
+  editSnapshot = null;
+  syncText(rec);
+  refreshItem(key);
+  updateCount();
+  if (state.selected.has(key)) openPropertyBarForSelection();
 }
 
 // ---------- Özellik çubuğu ----------
-function autoGrowPbText() {
-  els.pbText.style.height = 'auto';
-  els.pbText.style.height = Math.min(140, els.pbText.scrollHeight) + 'px';
-}
-
 function openPropertyBarForSelection() {
   const sel = [...state.selected];
   if (!sel.length) { closePropertyBar(); return; }
@@ -196,7 +283,6 @@ function openPropertyBarForSelection() {
     els.pbMultiRow.hidden = false;
     els.pbMultiLabel.textContent = `${sel.length} öğe seçili`;
     els.pbRevert.hidden = true;
-    els.pbRemove.hidden = true;
     els.pbDelete.hidden = false;
     els.pbDelete.textContent = 'Seçilenleri sil';
     return;
@@ -210,17 +296,13 @@ function openPropertyBarForSelection() {
   if (ref.kind === 'text') {
     els.pbAreaRow.hidden = true;
     els.pbTextRow.hidden = false;
-    const rec = getOrCreateTextRecord(key);
+    const rec = (state.editingKey === key && state.editingDraft) ? state.editingDraft : getOrCreateTextRecord(key);
     activeTextDraft = { key, rec };
-    textUndoPushed = false;
-    els.pbText.value = rec.text;
     els.pbSize.value = round1(rec.size);
     els.pbColor.value = rec.color;
     els.pbBold.classList.toggle('on', rec.bold);
     els.pbFont.value = rec.serif ? 'serif' : 'sans';
-    autoGrowPbText();
     els.pbRevert.hidden = !state.textEdits.has(key);
-    els.pbRemove.hidden = true;
     els.pbDelete.hidden = false;
     els.pbDelete.textContent = 'Sil';
   } else {
@@ -228,10 +310,8 @@ function openPropertyBarForSelection() {
     els.pbTextRow.hidden = true;
     els.pbAreaRow.hidden = false;
     const rec = state.areas.get(key);
-    els.pbToggleHide.textContent = rec.hidden ? 'Göster' : 'Gizle';
-    const untouched = Math.abs(rec.dx) < 0.02 && Math.abs(rec.dy) < 0.02 && Math.abs(rec.scale - 1) < 0.001;
-    els.pbRevert.hidden = untouched;
-    els.pbRemove.hidden = false;
+    els.pbToggleHide.textContent = rec?.hidden ? 'Göster' : 'Gizle';
+    els.pbRevert.hidden = !rec;
     els.pbDelete.hidden = true;
   }
 }
@@ -241,40 +321,38 @@ function closePropertyBar() {
   activeTextDraft = null;
 }
 
-function onTextFieldChange() {
+function onTextStyleChange() {
   if (!activeTextDraft) return;
   if (!textUndoPushed) { pushUndo(); textUndoPushed = true; }
   const { key, rec } = activeTextDraft;
-  rec.text = els.pbText.value;
   rec.size = parseFloat(els.pbSize.value) || rec.meta.fs;
   rec.color = els.pbColor.value;
   rec.bold = els.pbBold.classList.contains('on');
   rec.serif = els.pbFont.value === 'serif';
   syncText(rec);
-  refreshTextItem(key);
-  refreshSelectionClass(key);
+  refreshItem(key);
   els.pbRevert.hidden = !state.textEdits.has(key);
   updateCount();
 }
-els.pbText.addEventListener('input', () => { autoGrowPbText(); onTextFieldChange(); });
-els.pbSize.addEventListener('input', onTextFieldChange);
-els.pbColor.addEventListener('input', onTextFieldChange);
-els.pbFont.addEventListener('change', onTextFieldChange);
-els.pbBold.addEventListener('click', () => { els.pbBold.classList.toggle('on'); onTextFieldChange(); });
+els.pbSize.addEventListener('input', onTextStyleChange);
+els.pbColor.addEventListener('input', onTextStyleChange);
+els.pbFont.addEventListener('change', onTextStyleChange);
+els.pbBold.addEventListener('click', () => { els.pbBold.classList.toggle('on'); onTextStyleChange(); });
 
 function deleteItem(key) {
   const ref = state.itemRefs.get(key);
   if (!ref) return;
   if (ref.kind === 'text') {
+    if (state.editingKey === key) { state.editingKey = null; state.editingDraft = null; editSnapshot = null; }
     const rec = getOrCreateTextRecord(key);
     rec.text = '';
     syncText(rec);
-    refreshTextItem(key);
   } else {
-    const rec = state.areas.get(key);
-    if (rec) { rec.hidden = true; refreshAreaItem(key); }
+    const rec = getOrCreateImageRecord(key);
+    rec.hidden = true;
+    syncImage(rec);
   }
-  refreshSelectionClass(key);
+  refreshItem(key);
 }
 
 els.pbDelete.addEventListener('click', () => {
@@ -292,51 +370,36 @@ els.pbRevert.addEventListener('click', () => {
   pushUndo();
   const ref = state.itemRefs.get(key);
   if (ref.kind === 'text') {
+    if (state.editingKey === key) { state.editingKey = null; state.editingDraft = null; editSnapshot = null; }
     state.textEdits.delete(key);
-    refreshTextItem(key);
   } else {
-    const rec = state.areas.get(key);
-    rec.dx = 0; rec.dy = 0; rec.scale = 1;
-    refreshAreaItem(key);
+    state.areas.delete(key);
   }
-  refreshSelectionClass(key);
+  refreshItem(key);
   updateCount();
   openPropertyBarForSelection();
 });
 
-els.pbRemove.addEventListener('click', () => {
-  const key = [...state.selected][0];
-  const rec = key && state.areas.get(key);
-  if (!rec) return;
-  pushUndo();
-  // Not: url burada iptal edilmiyor — "Kaldır" geri alınabilir bir eylem olduğu için
-  // nesne URL'si yalnızca tam sıfırlamada (yeni dosya/Sıfırla) serbest bırakılır.
-  state.areas.delete(key);
-  removeItemDOM(key);
-  clearSelectionUI();
-  updateCount();
-});
-
 els.pbToggleHide.addEventListener('click', () => {
   const key = [...state.selected][0];
-  const rec = key && state.areas.get(key);
-  if (!rec) return;
+  if (!key) return;
   pushUndo();
+  const rec = getOrCreateImageRecord(key);
   rec.hidden = !rec.hidden;
-  refreshAreaItem(key);
-  refreshSelectionClass(key);
+  syncImage(rec);
+  refreshItem(key);
   updateCount();
   openPropertyBarForSelection();
 });
 
 function nudgeScale(delta) {
   const key = [...state.selected][0];
-  const rec = key && state.areas.get(key);
-  if (!rec) return;
+  if (!key) return;
   pushUndo();
+  const rec = getOrCreateImageRecord(key);
   rec.scale = Math.min(3, Math.max(0.2, +(rec.scale + delta).toFixed(2)));
-  refreshAreaItem(key);
-  refreshSelectionClass(key);
+  syncImage(rec);
+  refreshItem(key);
   updateCount();
   openPropertyBarForSelection();
 }
@@ -352,7 +415,7 @@ function beginItemGesture(primaryKey, evt) {
   const dragKeys = state.selected.has(primaryKey) && state.selected.size > 1
     ? [...state.selected]
     : [primaryKey];
-  if (dragKeys.length === 1) selectOnly(primaryKey);
+  if (dragKeys.length === 1 && !state.selected.has(primaryKey)) selectOnly(primaryKey);
 
   const startX = evt.clientX;
   const startY = evt.clientY;
@@ -367,7 +430,7 @@ function beginItemGesture(primaryKey, evt) {
     const dxPx = e.clientX - startX;
     const dyPx = e.clientY - startY;
     if (!dragging && Math.hypot(dxPx, dyPx) < 3) return;
-    if (!dragging) pushUndo(); // sürükleme gerçekten başlıyor: ilk kareden önce anlık görüntü al
+    if (!dragging) pushUndo();
     dragging = true;
     for (const k of dragKeys) {
       const ref = state.itemRefs.get(k);
@@ -380,11 +443,13 @@ function beginItemGesture(primaryKey, evt) {
       applyRecord(k, rec);
     }
   }
-  function onUp() {
+  function onUp(e) {
     window.removeEventListener('mousemove', onMove);
     window.removeEventListener('mouseup', onUp);
     if (!dragging) {
-      selectOnly(primaryKey);
+      const ref = state.itemRefs.get(primaryKey);
+      if (ref?.kind === 'text') startTextEditing(primaryKey, e);
+      else selectOnly(primaryKey);
     } else {
       updateCount();
       openPropertyBarForSelection();
@@ -394,27 +459,42 @@ function beginItemGesture(primaryKey, evt) {
   window.addEventListener('mouseup', onUp);
 }
 
-// ---------- Köşeden sürükleyerek yeniden boyutlandırma (görsel/logo) ----------
-function beginResizeGesture(rec, evt) {
+// ---------- Köşeden sürükleyerek yeniden boyutlandırma (metin + görsel) ----------
+function beginResizeGesture(key, evt) {
   evt.preventDefault();
-  const ref = state.itemRefs.get(rec.key);
-  const contentEl = ref?.wrap.querySelector(`.aitem[data-key="${CSS.escape(rec.key)}"]`);
-  if (!contentEl) return;
-  const box = contentEl.getBoundingClientRect();
-  const cx = box.left + box.width / 2;
-  const cy = box.top + box.height / 2;
-  const d0 = Math.hypot(evt.clientX - cx, evt.clientY - cy) || 1;
-  const scale0 = rec.scale;
+  const ref = state.itemRefs.get(key);
+  if (!ref) return;
+  const kind = ref.kind;
+  const existingRec = kind === 'text' ? state.textEdits.get(key) : state.areas.get(key);
+  const rect = kind === 'text'
+    ? textBoxScreenRect(ref.meta, existingRec, ref.pageInfo)
+    : imageBoxScreenRect(ref.meta, existingRec, ref.pageInfo);
+  const wrapBox = ref.wrap.getBoundingClientRect();
+  const centerX = wrapBox.left + rect.left + rect.width / 2;
+  const centerY = wrapBox.top + rect.top + rect.height / 2;
+  const d0 = Math.hypot(evt.clientX - centerX, evt.clientY - centerY) || 1;
   let moved = false;
+  let rec = null;
+  let base = 1;
 
   function onMove(e) {
-    const d1 = Math.hypot(e.clientX - cx, e.clientY - cy);
+    const d1 = Math.hypot(e.clientX - centerX, e.clientY - centerY);
     if (!moved && Math.abs(d1 - d0) < 2) return;
-    if (!moved) pushUndo();
+    if (!moved) {
+      pushUndo();
+      rec = getRecordForDrag(key);
+      base = kind === 'text' ? rec.size : rec.scale;
+    }
     moved = true;
-    rec.scale = Math.min(3, Math.max(0.2, +(scale0 * (d1 / d0)).toFixed(3)));
-    refreshAreaItem(rec.key);
-    refreshSelectionClass(rec.key);
+    const ratio = d1 / d0;
+    if (kind === 'text') {
+      rec.size = Math.min(140, Math.max(4, +(base * ratio).toFixed(2)));
+      syncText(rec);
+    } else {
+      rec.scale = Math.min(3, Math.max(0.2, +(base * ratio).toFixed(3)));
+      syncImage(rec);
+    }
+    refreshItem(key);
   }
   function onUp() {
     window.removeEventListener('mousemove', onMove);
@@ -425,95 +505,19 @@ function beginResizeGesture(rec, evt) {
   window.addEventListener('mouseup', onUp);
 }
 
-// ---------- Alan (görsel/logo) yakalama ----------
-function setAreaArmed(v) {
-  areaArmed = v;
-  els.areaToolBtn.classList.toggle('on', v);
-  document.querySelectorAll('.page-wrap').forEach((w) => w.classList.toggle('arming', v));
-}
-els.areaToolBtn.addEventListener('click', () => setAreaArmed(!areaArmed));
-
-function startMarquee(pageIdx, pageInfo, evt) {
-  evt.preventDefault();
-  const wrap = pageInfo.wrap;
-  const wrapRect = wrap.getBoundingClientRect();
-  const startX = Math.min(Math.max(evt.clientX - wrapRect.left, 0), wrapRect.width);
-  const startY = Math.min(Math.max(evt.clientY - wrapRect.top, 0), wrapRect.height);
-
-  const box = document.createElement('div');
-  box.className = 'marquee';
-  wrap.appendChild(box);
-  const set = (l, t, w, h) => {
-    box.style.left = `${l}px`; box.style.top = `${t}px`;
-    box.style.width = `${w}px`; box.style.height = `${h}px`;
-  };
-  set(startX, startY, 0, 0);
-
-  function onMove(e) {
-    const curX = Math.min(Math.max(e.clientX - wrapRect.left, 0), wrapRect.width);
-    const curY = Math.min(Math.max(e.clientY - wrapRect.top, 0), wrapRect.height);
-    set(Math.min(startX, curX), Math.min(startY, curY), Math.abs(curX - startX), Math.abs(curY - startY));
-  }
-  async function onUp() {
-    window.removeEventListener('mousemove', onMove);
-    window.removeEventListener('mouseup', onUp);
-    const l = parseFloat(box.style.left), t = parseFloat(box.style.top);
-    const w = parseFloat(box.style.width), h = parseFloat(box.style.height);
-    box.remove();
-    setAreaArmed(false);
-    if (w < 6 || h < 6) return;
-    await captureArea(pageIdx, pageInfo, l, t, w, h);
-  }
-  window.addEventListener('mousemove', onMove);
-  window.addEventListener('mouseup', onUp);
-}
-
-async function captureArea(pageIdx, pageInfo, l, t, w, h) {
-  const { bytes } = await cropToPng(pageInfo, l, t, w, h);
-  const pdfRect = screenRectToPdf(pageInfo, l, t, w, h);
-  const bg = sampleBgAround(pageInfo, l, t, w, h);
-  pushUndo();
-  const id = state.nextAreaId++;
-  const key = areaKey(id);
-  const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
-  const rec = {
-    key, page: pageIdx,
-    x: pdfRect.x, y: pdfRect.y, w: pdfRect.w, h: pdfRect.h,
-    dx: 0, dy: 0, scale: 1,
-    bg, png: bytes, url, hidden: false,
-  };
-  state.areas.set(key, rec);
-  // Seçimi çizimden ÖNCE güncelle: renderAreaItem "selected" durumuna göre tutamaçları
-  // yalnızca ilk çizimde ekler, sonradan refreshSelectionClass ile eklenemez.
-  const prevSelected = [...state.selected];
-  state.selected.clear();
-  state.selected.add(key);
-  renderAreaItem(pageInfo.wrap, pageInfo, rec); // ilk çizim: henüz itemRefs'te yok, refreshAreaItem çalışmaz
-  prevSelected.forEach(refreshSelectionVisual);
-  openPropertyBarForSelection();
-  updateCount();
-}
-
 // ---------- Olay yönlendirme (pdfview.js -> main.js) ----------
 state.onTextPointerDown = (fullMeta, key, el, evt) => {
-  if (areaArmed) { startMarquee(fullMeta.page, state.itemRefs.get(key).pageInfo, evt); return; }
+  if (state.editingKey === key) return; // zaten düzenleniyor: doğal imleç davranışına izin ver
   beginItemGesture(key, evt);
 };
-state.onAreaPointerDown = (rec, el, evt) => {
-  if (areaArmed) { startMarquee(rec.page, state.itemRefs.get(rec.key).pageInfo, evt); return; }
-  beginItemGesture(rec.key, evt);
+state.onImagePointerDown = (meta, key, el, evt) => {
+  beginItemGesture(key, evt);
 };
-state.onResizeHandleDown = (rec, corner, evt) => {
-  if (areaArmed) return;
-  beginResizeGesture(rec, evt);
-};
-state.onPageMouseDown = (pageIdx, wrap, evt) => {
-  if (areaArmed) {
-    const pageInfo = state.pageInfos.get(pageIdx);
-    if (pageInfo) startMarquee(pageIdx, pageInfo, evt);
-    return;
-  }
+state.onPageMouseDown = () => {
   clearSelectionUI();
+};
+state.onResizeHandleDown = (key, evt) => {
+  beginResizeGesture(key, evt);
 };
 els.workspace.addEventListener('mousedown', (e) => {
   if (e.target === els.workspace || e.target === els.pages) clearSelectionUI();
@@ -521,12 +525,9 @@ els.workspace.addEventListener('mousedown', (e) => {
 
 // ---------- Klavye ----------
 window.addEventListener('keydown', (e) => {
-  const inField = ['TEXTAREA', 'INPUT', 'SELECT'].includes(document.activeElement?.tagName);
-  if (e.key === 'Escape') {
-    if (areaArmed) setAreaArmed(false);
-    else clearSelectionUI();
-    return;
-  }
+  const inField = ['TEXTAREA', 'INPUT', 'SELECT'].includes(document.activeElement?.tagName)
+    || document.activeElement?.isContentEditable;
+  if (e.key === 'Escape') { clearSelectionUI(); return; }
   if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); download(); return; }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !inField) {
     e.preventDefault();
@@ -590,7 +591,7 @@ els.redoBtn.addEventListener('click', doRedo);
 els.resetBtn.addEventListener('click', () => {
   if (!editCount()) return;
   if (!confirm('Tüm düzeltmeler silinsin mi? Bu işlem geri alınamaz.')) return;
-  revokeAllAreaUrls();
+  revokeAllImageUrls();
   resetAll();
   closePropertyBar();
   rerender();

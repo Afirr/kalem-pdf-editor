@@ -252,6 +252,10 @@ body {
 .titem.edited { box-shadow: none; cursor: grab; outline: none; }
 .titem.edited:hover { box-shadow: inset 0 0 0 1.5px rgba(214, 69, 58, 0.5); }
 .titem.edited.selected { box-shadow: inset 0 0 0 2px var(--blue); }
+/* Satır içi düzenleme: tarayıcının varsayılan odak halkası yerine kendi vurgumuzu kullan,
+   yanıp sönen imleç (caret) doğal olarak görünür. .page-wrap'teki user-select:none
+   miras alınırsa contentEditable'da imleç/yazma çalışmaz — burada geri açılır. */
+.titem.edited[contenteditable="true"] { cursor: text; outline: none; user-select: text; }
 
 /* Orijinal konumdaki kapatma alanı (metin taşındığında/silindiğinde) */
 .tcover {
@@ -284,6 +288,19 @@ body {
 .aitem:active { cursor: grabbing; }
 .aitem img { pointer-events: none; }
 
+/* Otomatik algılanan, henüz hiç dokunulmamış görsel/logo — orijinal piksel altta
+   görünmeye devam eder, yalnızca sürekli kesikli çerçeve + tıklanabilirlik eklenir */
+.aitem-hit {
+  position: absolute;
+  cursor: grab;
+  border-radius: 2px;
+  outline: 1px dashed rgba(53, 104, 212, 0.35);
+  outline-offset: -1px;
+}
+.aitem-hit:hover { box-shadow: inset 0 0 0 1.5px rgba(214, 69, 58, 0.5); outline-color: transparent; }
+.aitem-hit.selected { box-shadow: inset 0 0 0 2px var(--blue); outline-color: transparent; }
+.aitem-hit:active { cursor: grabbing; }
+
 /* Görsel/logo yeniden boyutlandırma tutamaçları (köşeden sürükle) */
 .rhandle {
   position: absolute;
@@ -298,16 +315,6 @@ body {
 }
 .rhandle.ne, .rhandle.sw { cursor: nesw-resize; }
 .rhandle:hover { background: var(--blue); }
-
-/* Alan yakalama (marquee) seçim kutusu */
-.marquee {
-  position: absolute;
-  border: 1.5px dashed var(--red);
-  background: rgba(214, 69, 58, 0.1);
-  pointer-events: none;
-}
-
-.page-wrap.arming { cursor: crosshair; }
 
 /* ---------- Boş durum ---------- */
 .empty {

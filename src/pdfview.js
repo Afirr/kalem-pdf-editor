@@ -1,7 +1,9 @@
-// PDF görüntüleme: pdf.js ile sayfa çizimi + metin/alan katmanlarının çizimi
+// PDF görüntüleme: pdf.js ile sayfa çizimi + metin/görsel katmanlarının çizimi.
+// Görseller, operatör listesi (paintImageXObject) taranarak otomatik algılanır —
+// kullanıcının elle bir alan seçmesine gerek yoktur.
 import * as pdfjsLib from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { state, textKey } from './state.js';
+import { state, textKey, imageKey } from './state.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -98,19 +100,102 @@ async function renderPage(num, container, doc) {
     renderTextItem(wrap, pageInfo, meta);
   });
 
-  // ---- Alan (görsel/logo) öğeleri ----
-  for (const rec of state.areas.values()) {
-    if (rec.page === pageIdx) renderAreaItem(wrap, pageInfo, rec);
-  }
+  // ---- Görsel öğeleri (otomatik algılanan) ----
+  const regions = await detectImageRegions(page);
+  regions.forEach((region, index) => {
+    const meta = { page: pageIdx, index, x: region.x, y: region.y, w: region.w, h: region.h };
+    renderImageItem(wrap, pageInfo, meta);
+  });
 }
 
+// ---------- Görsel (logo/resim) otomatik algılama ----------
+// Operatör listesini CTM yığınıyla tarar; her paintImageXObject çağrısının birim
+// karesini (0,0)-(1,1) CTM ile PDF nokta uzayına dönüştürüp sınır kutusunu bulur.
+// Üst üste binen kutular (ör. bir fotoğraf + üzerine çizilmiş maske) tek nesneye
+// birleştirilir; aksi hâlde kullanıcı aynı görsel için birden fazla, çakışan
+// seçilebilir alan görür.
+function mulMat(s, c) {
+  return [
+    s[0] * c[0] + s[1] * c[2], s[0] * c[1] + s[1] * c[3],
+    s[2] * c[0] + s[3] * c[2], s[2] * c[1] + s[3] * c[3],
+    s[4] * c[0] + s[5] * c[2] + c[4], s[4] * c[1] + s[5] * c[3] + c[5],
+  ];
+}
+
+function rectsOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+function unionRect(a, b) {
+  const x0 = Math.min(a.x, b.x), y0 = Math.min(a.y, b.y);
+  const x1 = Math.max(a.x + a.w, b.x + b.w), y1 = Math.max(a.y + a.h, b.y + b.h);
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+function mergeOverlapping(rects) {
+  const list = rects.map((r) => ({ ...r }));
+  let merged = true;
+  while (merged) {
+    merged = false;
+    for (let i = 0; i < list.length && !merged; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        if (rectsOverlap(list[i], list[j])) {
+          const u = unionRect(list[i], list[j]);
+          list.splice(j, 1);
+          list.splice(i, 1);
+          list.push(u);
+          merged = true;
+          break;
+        }
+      }
+    }
+  }
+  return list;
+}
+
+const imageRegionCache = new WeakMap(); // pdf.js page nesnesi -> Promise<bölgeler>
+
+function detectImageRegions(page) {
+  if (imageRegionCache.has(page)) return imageRegionCache.get(page);
+  const promise = (async () => {
+    const OPS = pdfjsLib.OPS;
+    const { fnArray, argsArray } = await page.getOperatorList();
+    let ctm = [1, 0, 0, 1, 0, 0];
+    const stack = [];
+    const raw = [];
+    for (let i = 0; i < fnArray.length; i++) {
+      const fn = fnArray[i];
+      if (fn === OPS.save) stack.push(ctm);
+      else if (fn === OPS.restore) ctm = stack.pop() || ctm;
+      else if (fn === OPS.transform) ctm = mulMat(argsArray[i], ctm);
+      else if (fn === OPS.paintImageXObject || fn === OPS.paintImageXObjectRepeat) {
+        const c = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => [
+          ctm[0] * x + ctm[2] * y + ctm[4],
+          ctm[1] * x + ctm[3] * y + ctm[5],
+        ]);
+        const xs = c.map((p) => p[0]), ys = c.map((p) => p[1]);
+        const x = Math.min(...xs), y = Math.min(...ys);
+        const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
+        if (w > 4 && h > 4) raw.push({ x, y, w, h });
+      }
+    }
+    return mergeOverlapping(raw);
+  })();
+  imageRegionCache.set(page, promise);
+  return promise;
+}
+
+// ---------- Ortak yardımcılar ----------
 function positionAt(el, xPt, topPt, wPt, hPt, s) {
   el.style.left = `${xPt * s - 2}px`;
   el.style.top = `${topPt * s - 1}px`;
   el.style.minWidth = `${wPt * s + 4}px`;
   el.style.minHeight = `${hPt * s + 2}px`;
 }
-
+function setRect(el, r) {
+  el.style.left = `${r.left}px`;
+  el.style.top = `${r.top}px`;
+  el.style.width = `${r.width}px`;
+  el.style.height = `${r.height}px`;
+}
 function attachPointer(el, key, handler) {
   el.dataset.key = key;
   el.addEventListener('mousedown', (ev) => {
@@ -118,39 +203,92 @@ function attachPointer(el, key, handler) {
     handler(ev, el);
   });
 }
+function makeHandles(wrap, key, rect, onDown) {
+  const corners = [
+    ['nw', rect.left, rect.top],
+    ['ne', rect.left + rect.width, rect.top],
+    ['sw', rect.left, rect.top + rect.height],
+    ['se', rect.left + rect.width, rect.top + rect.height],
+  ];
+  for (const [corner, cx, cy] of corners) {
+    const h = document.createElement('div');
+    h.className = `rhandle ${corner}`;
+    h.dataset.key = key;
+    h.style.left = `${cx}px`;
+    h.style.top = `${cy}px`;
+    h.addEventListener('mousedown', (ev) => { ev.stopPropagation(); onDown(ev); });
+    wrap.appendChild(h);
+  }
+}
+
+// Bir metin kutusunun geçerli (rec varsa taşınmış/boyutlanmış, yoksa orijinal) ekran
+// dikdörtgeni — hem çizim hem de yeniden-boyutlandırma sürüklemesinin başlangıç
+// merkezini hesaplamak için main.js tarafından da kullanılır.
+export function textBoxScreenRect(meta, rec, pageInfo) {
+  const s = pageInfo.scale;
+  const size = rec ? rec.size : meta.fs;
+  const dx = rec ? rec.dx : 0;
+  const dy = rec ? rec.dy : 0;
+  const ratio = size / meta.fs;
+  const left = (meta.x + dx) * s;
+  const topPdf = pageInfo.pdfH - (meta.yBase + dy) - size * 0.87;
+  return { left, top: topPdf * s, width: meta.w * ratio * s, height: size * 1.16 * s };
+}
+
+// Bir görselin geçerli ekran dikdörtgeni (merkezden ölçekli).
+export function imageBoxScreenRect(meta, rec, pageInfo) {
+  const s = pageInfo.scale;
+  const scale = rec ? rec.scale : 1;
+  const dx = rec ? rec.dx : 0;
+  const dy = rec ? rec.dy : 0;
+  const w = meta.w * scale;
+  const h = meta.h * scale;
+  const x = meta.x + dx + (meta.w - w) / 2;
+  const y = meta.y + dy + (meta.h - h) / 2;
+  const topPdf = pageInfo.pdfH - y - h;
+  return { left: x * s, top: topPdf * s, width: w * s, height: h * s };
+}
 
 // ---------- Metin öğesi ----------
 export function renderTextItem(wrap, pageInfo, meta) {
   const key = textKey(meta.page, meta.index);
   const s = pageInfo.scale;
   const fullMeta = { ...meta, canvas: pageInfo.canvas, pxScale: s * pageInfo.dpr, pdfH: pageInfo.pdfH };
-  state.itemRefs.set(key, { kind: 'text', wrap, pageInfo, fullMeta });
+  state.itemRefs.set(key, { kind: 'text', wrap, pageInfo, fullMeta, meta });
 
-  const rec = state.textEdits.get(key);
+  const editing = state.editingKey === key;
+  const rec = state.textEdits.get(key) || (editing ? state.editingDraft : null);
   const selected = state.selected.has(key);
 
   if (!rec) {
     const hit = document.createElement('div');
     hit.className = 'titem' + (selected ? ' selected' : '');
-    hit.title = 'Seç, üstteki çubuktan düzenle';
+    hit.title = 'Düzenlemek için tıkla';
     positionAt(hit, meta.x, pageInfo.pdfH - meta.yBase - meta.fs * 0.87, meta.w, meta.fs * 1.16, s);
     hit.style.paddingBottom = `${meta.fs * 0.18 * s}px`;
     attachPointer(hit, key, (ev) => state.onTextPointerDown?.(fullMeta, key, hit, ev));
     wrap.appendChild(hit);
+    if (selected) makeHandles(wrap, key, textBoxScreenRect(meta, null, pageInfo), (ev) => state.onResizeHandleDown?.(key, ev));
     return;
   }
 
-  // Değiştirilmiş: orijinal konumda kapatma + (varsa) yeni konumda içerik
   const cover = document.createElement('div');
   cover.className = 'tcover' + (selected ? ' selected' : '');
+  cover.dataset.key = key;
   positionAt(cover, meta.x, pageInfo.pdfH - meta.yBase - meta.fs * 0.87, meta.w, meta.fs * 1.16, s);
   cover.style.background = rec.bg;
-  attachPointer(cover, key, (ev) => state.onTextPointerDown?.(fullMeta, key, cover, ev));
+  if (!editing) {
+    cover.addEventListener('mousedown', (ev) => {
+      ev.stopPropagation();
+      state.onTextPointerDown?.(fullMeta, key, cover, ev);
+    });
+  }
   wrap.appendChild(cover);
 
-  if (rec.text) {
+  if (rec.text || editing) {
     const content = document.createElement('div');
     content.className = 'titem edited' + (selected ? ' selected' : '');
+    content.dataset.key = key;
     const left = meta.x + rec.dx;
     const topPdf = pageInfo.pdfH - (meta.yBase + rec.dy) - rec.size * 0.87;
     positionAt(content, left, topPdf, meta.w, rec.size * 1.16, s);
@@ -165,99 +303,93 @@ export function renderTextItem(wrap, pageInfo, meta) {
     content.style.width = 'max-content';
     content.style.whiteSpace = 'pre';
     content.textContent = rec.text;
-    attachPointer(content, key, (ev) => state.onTextPointerDown?.(fullMeta, key, content, ev));
+    if (editing) {
+      content.contentEditable = 'true';
+      content.spellcheck = false;
+    } else {
+      content.addEventListener('mousedown', (ev) => {
+        ev.stopPropagation();
+        state.onTextPointerDown?.(fullMeta, key, content, ev);
+      });
+    }
     wrap.appendChild(content);
   }
+
+  if (selected) makeHandles(wrap, key, textBoxScreenRect(meta, rec, pageInfo), (ev) => state.onResizeHandleDown?.(key, ev));
 }
 
 export function refreshTextItem(key) {
   const ref = state.itemRefs.get(key);
   if (!ref) return;
   ref.wrap.querySelectorAll(`[data-key="${CSS.escape(key)}"]`).forEach((n) => n.remove());
-  renderTextItem(ref.wrap, ref.pageInfo, ref.fullMeta);
+  renderTextItem(ref.wrap, ref.pageInfo, ref.meta);
 }
 
-// ---------- Alan (görsel/logo) öğesi ----------
-export function renderAreaItem(wrap, pageInfo, rec) {
-  const s = pageInfo.scale;
-  const key = rec.key;
-  state.itemRefs.set(key, { kind: 'area', wrap, pageInfo });
+// ---------- Görsel (logo/resim) öğesi ----------
+export function renderImageItem(wrap, pageInfo, meta) {
+  const key = imageKey(meta.page, meta.index);
+  state.itemRefs.set(key, { kind: 'image', wrap, pageInfo, meta });
+  const rec = state.areas.get(key);
   const selected = state.selected.has(key);
 
+  if (!rec) {
+    const hit = document.createElement('div');
+    hit.className = 'aitem-hit' + (selected ? ' selected' : '');
+    hit.title = 'Seç, sürükle veya köşeden büyüt';
+    setRect(hit, imageBoxScreenRect(meta, null, pageInfo));
+    attachPointer(hit, key, (ev) => state.onImagePointerDown?.(meta, key, hit, ev));
+    wrap.appendChild(hit);
+    if (selected) makeHandles(wrap, key, imageBoxScreenRect(meta, null, pageInfo), (ev) => state.onResizeHandleDown?.(key, ev));
+    return;
+  }
+
+  const originalRect = imageBoxScreenRect(meta, null, pageInfo);
   const cover = document.createElement('div');
   cover.className = 'acover' + (selected && rec.hidden ? ' selected' : '');
-  const topOrig = pageInfo.pdfH - rec.y - rec.h;
-  positionAt(cover, rec.x, topOrig, rec.w, rec.h, s);
+  setRect(cover, originalRect);
   cover.style.background = rec.bg;
-  attachPointer(cover, key, (ev) => state.onAreaPointerDown?.(rec, cover, ev));
+  attachPointer(cover, key, (ev) => state.onImagePointerDown?.(meta, key, cover, ev));
   wrap.appendChild(cover);
 
   if (!rec.hidden) {
+    const rect = imageBoxScreenRect(meta, rec, pageInfo);
     const content = document.createElement('div');
     content.className = 'aitem' + (selected ? ' selected' : '');
-    const w = rec.w * rec.scale;
-    const h = rec.h * rec.scale;
-    const x = rec.x + rec.dx + (rec.w - w) / 2;
-    const y = rec.y + rec.dy + (rec.h - h) / 2;
-    const topPdf = pageInfo.pdfH - y - h;
-    positionAt(content, x, topPdf, w, h, s);
-    content.style.width = `${w * s}px`;
-    content.style.height = `${h * s}px`;
-    content.style.minWidth = '';
-    content.style.minHeight = '';
-    const img = document.createElement('img');
-    img.draggable = false;
-    img.src = rec.url;
-    img.alt = '';
-    img.style.width = '100%';
-    img.style.height = '100%';
-    img.style.display = 'block';
-    content.appendChild(img);
-    attachPointer(content, key, (ev) => state.onAreaPointerDown?.(rec, content, ev));
-    wrap.appendChild(content);
-
-    if (selected) {
-      const left = x * s, top = topPdf * s, right = left + w * s, bottom = top + h * s;
-      const corners = [
-        ['nw', left, top], ['ne', right, top], ['sw', left, bottom], ['se', right, bottom],
-      ];
-      for (const [corner, cx, cy] of corners) {
-        const handle = document.createElement('div');
-        handle.className = `rhandle ${corner}`;
-        handle.dataset.key = key;
-        handle.style.left = `${cx}px`;
-        handle.style.top = `${cy}px`;
-        handle.addEventListener('mousedown', (ev) => {
-          ev.stopPropagation();
-          state.onResizeHandleDown?.(rec, corner, ev);
-        });
-        wrap.appendChild(handle);
-      }
+    setRect(content, rect);
+    if (rec.url) {
+      const img = document.createElement('img');
+      img.draggable = false;
+      img.src = rec.url;
+      img.alt = '';
+      img.style.width = '100%';
+      img.style.height = '100%';
+      img.style.display = 'block';
+      content.appendChild(img);
+    } else {
+      content.style.background = rec.bg; // kırpma henüz tamamlanmadı: kısa süreliğine zemin rengiyle doldur
     }
+    attachPointer(content, key, (ev) => state.onImagePointerDown?.(meta, key, content, ev));
+    wrap.appendChild(content);
+    if (selected) makeHandles(wrap, key, rect, (ev) => state.onResizeHandleDown?.(key, ev));
+  } else if (selected) {
+    makeHandles(wrap, key, originalRect, (ev) => state.onResizeHandleDown?.(key, ev));
   }
 }
 
-export function refreshAreaItem(key) {
-  const ref = state.itemRefs.get(key);
-  const rec = state.areas.get(key);
-  if (!ref || !rec) return;
-  ref.wrap.querySelectorAll(`[data-key="${CSS.escape(key)}"]`).forEach((n) => n.remove());
-  renderAreaItem(ref.wrap, ref.pageInfo, rec);
-}
-
-export function removeItemDOM(key) {
+export function refreshImageItem(key) {
   const ref = state.itemRefs.get(key);
   if (!ref) return;
   ref.wrap.querySelectorAll(`[data-key="${CSS.escape(key)}"]`).forEach((n) => n.remove());
-  state.itemRefs.delete(key);
+  renderImageItem(ref.wrap, ref.pageInfo, ref.meta);
 }
 
-// Yalnızca seçim/vurgu sınıfını tazeler (yeniden konumlamadan) — çoklu seçimde ucuz güncelleme için
-export function refreshSelectionClass(key) {
+// Tür ayrımı gözetmeden doğru yeniden çizimi tetikler (seçim/sürükleme/boyutlandırma
+// gibi tüm main.js akışlarının tek giriş noktası).
+export function refreshItem(key) {
   const ref = state.itemRefs.get(key);
   if (!ref) return;
-  const on = state.selected.has(key);
-  ref.wrap.querySelectorAll(`[data-key="${CSS.escape(key)}"]`).forEach((n) => n.classList.toggle('selected', on));
+  if (ref.kind === 'text') refreshTextItem(key);
+  else refreshImageItem(key);
 }
 
 // ---------- Geometri & renk yardımcıları ----------
