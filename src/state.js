@@ -23,6 +23,11 @@ export const state = {
   customAreas: new Map(),
   nextCustomAreaIndex: 2000000,
 
+  // Katman (yığılma/z) sırası: sayfa indeksi -> anahtar[] (alttan üste).
+  // Katman panelinden sürükleyerek yeniden sıralanabilir; boşsa renderPage
+  // doğal algılama sırasını kullanıp burayı doldurur.
+  zOrder: new Map(),
+
   // Son çizimde her anahtarın hangi sayfa/kutuya ait olduğunu tutar (main.js sürükleme,
   // yeniden boyutlandırma ve düzenleme sırasında bu kayıtlardan sayfa bilgisine ulaşır).
   itemRefs: new Map(),
@@ -102,6 +107,7 @@ export function resetAll() {
   state.nextCustomTextIndex = 1000000;
   state.customAreas.clear();
   state.nextCustomAreaIndex = 2000000;
+  state.zOrder.clear();
   state.editingKey = null;
   state.editingDraft = null;
   state.history.undo.length = 0;
@@ -117,6 +123,7 @@ function snapshot() {
     areas: [...state.areas.entries()].map(([k, r]) => [k, { ...r }]),
     customTexts: [...state.customTexts.entries()].map(([k, list]) => [k, list.map((m) => ({ ...m }))]),
     customAreas: [...state.customAreas.entries()].map(([k, list]) => [k, list.map((m) => ({ ...m }))]),
+    zOrder: [...state.zOrder.entries()].map(([k, list]) => [k, [...list]]),
   };
 }
 
@@ -125,6 +132,7 @@ function restoreSnapshot(snap) {
   state.areas = new Map(snap.areas.map(([k, r]) => [k, { ...r }]));
   state.customTexts = new Map(snap.customTexts.map(([k, list]) => [k, list.map((m) => ({ ...m }))]));
   state.customAreas = new Map(snap.customAreas.map(([k, list]) => [k, list.map((m) => ({ ...m }))]));
+  state.zOrder = new Map((snap.zOrder || []).map(([k, list]) => [k, [...list]]));
 }
 
 const HISTORY_LIMIT = 60;

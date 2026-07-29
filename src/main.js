@@ -9,7 +9,7 @@ import {
   pushUndo, undo, redo, canUndo, canRedo,
 } from './state.js';
 import { bake } from './export.js';
-import { initSidebar, loadThumbnails, refreshLayers } from './sidebar.js';
+import { initSidebar, loadThumbnails, refreshLayers, moveLayer } from './sidebar.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -25,6 +25,8 @@ const els = {
   pbTextRow: $('pbTextRow'), pbSize: $('pbSize'), pbColor: $('pbColor'), pbBold: $('pbBold'), pbFont: $('pbFont'),
   pbAreaRow: $('pbAreaRow'), pbShrink: $('pbShrink'), pbGrow: $('pbGrow'), pbToggleHide: $('pbToggleHide'),
   pbMultiRow: $('pbMultiRow'), pbMultiLabel: $('pbMultiLabel'), pbMerge: $('pbMerge'),
+  pbOrderRow: $('pbOrderRow'), pbBackward: $('pbBackward'), pbForward: $('pbForward'),
+  pbToBack: $('pbToBack'), pbToFront: $('pbToFront'),
   pbRevert: $('pbRevert'), pbDelete: $('pbDelete'), pbClose: $('pbClose'),
   hint: $('hint'), hintClose: $('hintClose'), dragVeil: $('dragVeil'),
 };
@@ -56,6 +58,7 @@ initSidebar({
     }
     lastLayerKey = key;
   },
+  onReorder: () => rerender(),
 });
 
 // ---------- PDF açma ----------
@@ -372,6 +375,7 @@ function openPropertyBarForSelection() {
     activeTextDraft = null;
     els.pbTextRow.hidden = true;
     els.pbAreaRow.hidden = true;
+    els.pbOrderRow.hidden = true;
     els.pbMultiRow.hidden = false;
     els.pbMultiLabel.textContent = `${sel.length} öğe seçili`;
     els.pbRevert.hidden = true;
@@ -384,6 +388,7 @@ function openPropertyBarForSelection() {
   const ref = state.itemRefs.get(key);
   if (!ref) { clearSelectionUI(); return; }
   els.pbMultiRow.hidden = true;
+  els.pbOrderRow.hidden = false;
 
   if (ref.kind === 'text') {
     els.pbAreaRow.hidden = true;
@@ -575,6 +580,18 @@ async function mergeSelected() {
   updateCount();
 }
 els.pbMerge.addEventListener('click', mergeSelected);
+
+function moveSelectedLayer(mode) {
+  const key = [...state.selected][0];
+  if (!key) return;
+  pushUndo();
+  moveLayer(key, mode);
+  rerender();
+}
+els.pbBackward.addEventListener('click', () => moveSelectedLayer('backward'));
+els.pbForward.addEventListener('click', () => moveSelectedLayer('forward'));
+els.pbToBack.addEventListener('click', () => moveSelectedLayer('back'));
+els.pbToFront.addEventListener('click', () => moveSelectedLayer('front'));
 
 // Aynı sayfadaki (sürüklenenler hariç) tüm öğelerin kenar/merkez konumlarını toplar.
 function collectGuideCandidates(pageIdx, excludeKeys) {

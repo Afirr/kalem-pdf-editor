@@ -289,6 +289,17 @@ body {
 }
 .layer-row:hover { background: rgba(34, 37, 45, 0.06); }
 .layer-row.selected { background: var(--blue-soft); }
+.layer-row.dragging { opacity: 0.4; }
+.layer-row.drag-over { box-shadow: inset 0 2px 0 var(--blue); }
+.layer-handle {
+  flex-shrink: 0;
+  width: 12px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: -1px;
+  cursor: grab;
+  user-select: none;
+}
 .layer-icon {
   flex-shrink: 0;
   width: 20px;

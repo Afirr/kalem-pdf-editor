@@ -87,6 +87,10 @@ async function renderPage(num, container, doc) {
     };
   }
 
+  // Bu sayfadaki tüm metin/görsel öğelerinin meta'sını önce topluyoruz ki
+  // aşağıda gerçek çizim, doğal algılama sırası yerine kullanıcının katman
+  // panelinden ayarladığı z-sırasına (varsa) göre yapılabilsin.
+  const textMetas = new Map();
   tc.items.forEach((it, index) => {
     if (!it.str || !it.str.trim()) return;
     const [a, b, c, d, e, f] = it.transform;
@@ -99,21 +103,42 @@ async function renderPage(num, container, doc) {
       bold: fontInfo[it.fontName]?.bold || false,
       serif: fontInfo[it.fontName]?.serif || false,
     };
-    renderTextItem(wrap, pageInfo, meta);
+    textMetas.set(textKey(pageIdx, index), meta);
+  });
+  (state.customTexts.get(pageIdx) || []).forEach((meta) => {
+    textMetas.set(textKey(pageIdx, meta.index), meta);
   });
 
-  // ---- Kullanıcının "Metin Ekle" ile eklediği metin kutuları ----
-  (state.customTexts.get(pageIdx) || []).forEach((meta) => renderTextItem(wrap, pageInfo, meta));
-
-  // ---- Görsel öğeleri (otomatik algılanan) ----
   const regions = await detectImageRegions(page, tc.items);
+  const imageMetas = new Map();
   regions.forEach((region, index) => {
     const meta = { page: pageIdx, index, x: region.x, y: region.y, w: region.w, h: region.h };
-    renderImageItem(wrap, pageInfo, meta);
+    imageMetas.set(imageKey(pageIdx, index), meta);
+  });
+  (state.customAreas.get(pageIdx) || []).forEach((meta) => {
+    imageMetas.set(imageKey(pageIdx, meta.index), meta);
   });
 
-  // ---- Katman panelinden "Birleştir" ile oluşturulan görsel bölgeler ----
-  (state.customAreas.get(pageIdx) || []).forEach((meta) => renderImageItem(wrap, pageInfo, meta));
+  // Katman (z) sırasını al; yoksa doğal algılama sırasıyla oluştur. Önceki
+  // sırada olup artık var olmayan anahtarlar düşer, yeni beliren anahtarlar
+  // (ör. yeni eklenen metin/birleştirilen görsel) en üste eklenir.
+  const naturalOrder = [...textMetas.keys(), ...imageMetas.keys()];
+  let order = state.zOrder.get(pageIdx);
+  if (!order) {
+    order = naturalOrder;
+  } else {
+    const known = new Set(order);
+    order = order.filter((k) => textMetas.has(k) || imageMetas.has(k));
+    for (const k of naturalOrder) if (!known.has(k)) order.push(k);
+  }
+  state.zOrder.set(pageIdx, order);
+
+  for (const key of order) {
+    const tMeta = textMetas.get(key);
+    if (tMeta) { renderTextItem(wrap, pageInfo, tMeta); continue; }
+    const iMeta = imageMetas.get(key);
+    if (iMeta) renderImageItem(wrap, pageInfo, iMeta);
+  }
 }
 
 // ---------- Görsel (logo/resim) otomatik algılama ----------
@@ -165,29 +190,45 @@ function textBoxesFromItems(items) {
 }
 
 // Bir görsel bölgesini, üstüne/altına/kenarına taşan gerçek metin
-// satırlarının dışında kalacak şekilde daraltır; metin bölgeyi neredeyse
-// tümüyle kaplıyorsa bölgeyi tümden eler (null). Böylece bir başlığın
-// arkasındaki dekoratif bant gibi bir görsel, üstündeki gerçek metni
-// "yutmaz" — aksi hâlde görsel taşındığında metin de onunla birlikte
-// sürüklenmiş gibi görünür (aslında yalnızca yakalanan pikselin parçası olur).
-function trimRegionAgainstText(region, textBoxes) {
-  let { x, y, w, h } = region;
+// satırlarının dışında kalacak PARÇALARA böler (kırpıp atmaz — hiçbir görsel
+// piksel kaybolmaz, yalnızca metnin bulunduğu şerit iki ayrı öğeye ayrılır).
+// Böylece bir başlığın arkasındaki dekoratif bant gibi bir görsel, üstündeki
+// gerçek metni "yutmaz" (aksi hâlde görsel taşındığında metin de onunla
+// birlikte sürüklenmiş gibi görünür) VE metnin öbür tarafında kalan görsel
+// içeriği de kaybolmaz — o da kendi başına seçilebilir bir parça olarak kalır.
+function splitRegionAroundText(region, textBoxes) {
+  let pieces = [region];
   for (const t of textBoxes) {
-    const ox = Math.min(x + w, t.x + t.w) - Math.max(x, t.x);
-    const oy = Math.min(y + h, t.y + t.h) - Math.max(y, t.y);
-    if (ox <= 0 || oy <= 0) continue;
-    if (oy <= ox) {
-      // metin bölgeyi enine kaplıyor (bir başlık satırı gibi): dikeyde kırp
-      if (t.y + t.h / 2 > y + h / 2) h = Math.min(h, Math.max(0, t.y - y));
-      else { const newY = t.y + t.h; h = Math.max(0, (y + h) - newY); y = newY; }
-    } else {
-      // metin bölgeyi boyuna kaplıyor: yatayda kırp
-      if (t.x + t.w / 2 > x + w / 2) w = Math.min(w, Math.max(0, t.x - x));
-      else { const newX = t.x + t.w; w = Math.max(0, (x + w) - newX); x = newX; }
+    const next = [];
+    for (const r of pieces) {
+      const ox = Math.min(r.x + r.w, t.x + t.w) - Math.max(r.x, t.x);
+      const oy = Math.min(r.y + r.h, t.y + t.h) - Math.max(r.y, t.y);
+      if (ox <= 0 || oy <= 0) { next.push(r); continue; } // örtüşme yok
+      if (oy <= ox) {
+        // metin bölgeyi enine kesiyor (bir başlık satırı gibi): üst/alt parçaya böl
+        if (t.y + t.h < r.y + r.h) {
+          const nh = (r.y + r.h) - (t.y + t.h);
+          if (nh > 4) next.push({ x: r.x, y: t.y + t.h, w: r.w, h: nh });
+        }
+        if (t.y > r.y) {
+          const nh = t.y - r.y;
+          if (nh > 4) next.push({ x: r.x, y: r.y, w: r.w, h: nh });
+        }
+      } else {
+        // metin bölgeyi boyuna kesiyor: sol/sağ parçaya böl
+        if (t.x + t.w < r.x + r.w) {
+          const nw = (r.x + r.w) - (t.x + t.w);
+          if (nw > 4) next.push({ x: t.x + t.w, y: r.y, w: nw, h: r.h });
+        }
+        if (t.x > r.x) {
+          const nw = t.x - r.x;
+          if (nw > 4) next.push({ x: r.x, y: r.y, w: nw, h: r.h });
+        }
+      }
     }
-    if (w <= 4 || h <= 4) return null;
+    pieces = next;
   }
-  return { x, y, w, h };
+  return pieces;
 }
 
 function mergeOverlapping(rects) {
@@ -349,13 +390,13 @@ function detectImageRegions(page, textItems) {
     // grafiği), gerçek bir metin satırının bulunduğu alanı da kapsayabilir —
     // bu durumda metin, görselin yakalanan pikseline "gömülü" kalır: görsel
     // taşındığında metin de onunla birlikte gitmiş GİBİ görünür (aslında
-    // sadece o pikselin bir parçası olmuştur). Böyle bir çakışma varsa
-    // görsel bölgesini gerçek metnin dışında kalacak şekilde daraltıyoruz.
+    // sadece o pikselin bir parçası olmuştur). Böyle bir çakışma varsa görsel
+    // bölgesini metnin iki yanında kalan PARÇALARA bölüyoruz — kırpıp atmıyoruz,
+    // aksi hâlde metnin öbür tarafındaki gerçek görsel içeriği de kaybolur ve
+    // görsel "yarım kesilmiş" gibi görünür.
     const textBoxes = textBoxesFromItems(textItems);
     if (!textBoxes.length) return merged;
-    return merged
-      .map((r) => trimRegionAgainstText(r, textBoxes))
-      .filter(Boolean);
+    return merged.flatMap((r) => splitRegionAroundText(r, textBoxes));
   })();
   imageRegionCache.set(page, promise);
   return promise;
@@ -492,7 +533,12 @@ export function renderTextItem(wrap, pageInfo, meta) {
     const topPdf = pageInfo.pdfH - (meta.yBase + rec.dy) - rec.size * 0.87;
     positionAt(content, left, topPdf, meta.w, rec.size * 1.16, s);
     content.style.paddingBottom = `${rec.size * 0.18 * s}px`;
-    content.style.background = rec.bg;
+    // Zemin rengi yalnızca metin hâlâ ORİJİNAL konumundaysa (altındaki cover
+    // ile aynı yerde) uygulanır — dışa aktarımda da yalnız orijinal konum
+    // kapatılır. Metin taşınmışsa arka planı boyamak, eski (uyuşmayan) bir
+    // renk yamasının metinle birlikte sürüklenmiş gibi görünmesine yol açar.
+    const moved = Math.abs(rec.dx) > 0.02 || Math.abs(rec.dy) > 0.02;
+    content.style.background = moved ? 'transparent' : rec.bg;
     content.style.color = rec.color;
     content.style.fontSize = `${rec.size * s}px`;
     content.style.fontFamily = rec.serif

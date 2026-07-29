@@ -2,21 +2,24 @@
 // sayfanın katman listesi (metin/görsel öğeler, tıklayınca seçer). Katman
 // listesi kasıtlı olarak yalnızca ekrandaki geçerli sayfayı gösterir — tüm
 // sayfaların katmanlarını aynı anda listelemek karmaşıklaşır.
-import { state } from './state.js';
+import { state, pushUndo } from './state.js';
 
 let workspaceEl = null;
 let thumbEl = null;
 let layersEl = null;
 let layersTitleEl = null;
 let onSelectLayer = null;
+let onReorderLayers = null;
 let currentPage = 0;
+let dragKey = null;
 
-export function initSidebar({ workspace, thumbs, layers, layersTitle, onSelect }) {
+export function initSidebar({ workspace, thumbs, layers, layersTitle, onSelect, onReorder }) {
   workspaceEl = workspace;
   thumbEl = thumbs;
   layersEl = layers;
   layersTitleEl = layersTitle;
   onSelectLayer = onSelect;
+  onReorderLayers = onReorder;
   workspaceEl.addEventListener('scroll', () => {
     const p = computeCurrentPage();
     if (p !== currentPage) {
@@ -85,14 +88,22 @@ function syncActiveThumb() {
   });
 }
 
-// Geçerli sayfanın metin/görsel öğelerini katman listesine çizer. Herhangi bir
-// düzenleme, seçim ya da sayfa değişiminden sonra çağrılır.
+// Geçerli sayfanın metin/görsel öğelerini katman listesine, en öndeki (üstteki)
+// katman listenin BAŞINDA olacak şekilde çizer — Canva/Figma kuralı. Herhangi
+// bir düzenleme, seçim ya da sayfa değişiminden sonra çağrılır. Satırlar
+// sürükle-bırak ile yeniden sıralanabilir; bu, state.zOrder'ı günceller ve
+// sayfanın gerçek yığılma (z) sırasını da değiştirir.
 export function refreshLayers() {
   if (!layersEl) return;
   layersTitleEl.textContent = String(currentPage + 1);
   layersEl.innerHTML = '';
 
-  const entries = [...state.itemRefs.entries()].filter(([, ref]) => ref.pageInfo.page === currentPage);
+  const order = state.zOrder.get(currentPage) || [];
+  const entries = order
+    .map((key) => [key, state.itemRefs.get(key)])
+    .filter(([, ref]) => ref && ref.pageInfo.page === currentPage)
+    .reverse();
+
   if (!entries.length) {
     const empty = document.createElement('div');
     empty.className = 'layers-empty';
@@ -101,11 +112,19 @@ export function refreshLayers() {
     return;
   }
 
+  const pageKeys = entries.map(([k]) => k);
+
   for (const [key, ref] of entries) {
-    const row = document.createElement('button');
-    row.type = 'button';
+    const row = document.createElement('div');
     row.className = 'layer-row' + (state.selected.has(key) ? ' selected' : '');
     row.dataset.key = key;
+    row.tabIndex = 0;
+    row.draggable = true;
+
+    const handle = document.createElement('span');
+    handle.className = 'layer-handle';
+    handle.textContent = '⋮⋮';
+    row.appendChild(handle);
 
     const icon = document.createElement('span');
     icon.className = 'layer-icon';
@@ -118,11 +137,70 @@ export function refreshLayers() {
     row.appendChild(label);
 
     row.addEventListener('click', (ev) => {
-      onSelectLayer?.(key, ev, entries.map(([k]) => k));
+      onSelectLayer?.(key, ev, pageKeys);
       document.querySelector(`[data-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: 'nearest' });
     });
+
+    row.addEventListener('dragstart', (ev) => {
+      pushUndo();
+      dragKey = key;
+      ev.dataTransfer.effectAllowed = 'move';
+      row.classList.add('dragging');
+    });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('dragging');
+      dragKey = null;
+      layersEl.querySelectorAll('.layer-row.drag-over').forEach((el) => el.classList.remove('drag-over'));
+    });
+    row.addEventListener('dragover', (ev) => {
+      if (!dragKey || dragKey === key) return;
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = 'move';
+      row.classList.add('drag-over');
+    });
+    row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+    row.addEventListener('drop', (ev) => {
+      ev.preventDefault();
+      row.classList.remove('drag-over');
+      if (!dragKey || dragKey === key) return;
+      reorderWithinPage(currentPage, dragKey, key);
+      dragKey = null;
+      onReorderLayers?.();
+    });
+
     layersEl.appendChild(row);
   }
+}
+
+// Sürüklenen katmanı, hedef katmanın GÖRÜNÜR (üstten alta) konumuna yerleştirir
+// — hedef bir alt sıraya kayar. zOrder dizisi alttan üste tutulduğundan burada
+// önce ters çevrilip (görünür sıra), işlem sonrası tekrar ters çevrilir.
+function reorderWithinPage(pageIdx, movedKey, targetKey) {
+  const order = state.zOrder.get(pageIdx);
+  if (!order) return;
+  const display = [...order].reverse();
+  const fromIdx = display.indexOf(movedKey);
+  if (fromIdx === -1 || display.indexOf(targetKey) === -1) return;
+  display.splice(fromIdx, 1);
+  const toIdx = display.indexOf(targetKey);
+  display.splice(toIdx, 0, movedKey);
+  state.zOrder.set(pageIdx, display.reverse());
+}
+
+// Seçili tek katmanı bir öne/arkaya ya da en öne/arkaya taşır.
+export function moveLayer(key, mode) {
+  const ref = state.itemRefs.get(key);
+  if (!ref) return;
+  const pageIdx = ref.pageInfo.page;
+  const order = state.zOrder.get(pageIdx);
+  if (!order) return;
+  const i = order.indexOf(key);
+  if (i === -1) return;
+  order.splice(i, 1);
+  if (mode === 'front') order.push(key);
+  else if (mode === 'back') order.unshift(key);
+  else if (mode === 'forward') order.splice(Math.min(order.length, i + 1), 0, key);
+  else if (mode === 'backward') order.splice(Math.max(0, i - 1), 0, key);
 }
 
 function labelFor(key, ref) {
