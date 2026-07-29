@@ -9,6 +9,7 @@ export const state = {
   areas: new Map(),     // "a:id" -> kayıt (yakalanmış görsel/logo alanları)
   selected: new Set(),  // seçili anahtarlar (metin + alan karışık olabilir)
   nextAreaId: 1,
+  history: { undo: [], redo: [] }, // geri al / ileri al yığınları (bkz. pushUndo/undo/redo)
 
   // Son çizimde her anahtarın hangi sayfa/kutuya ait olduğunu tutar (main.js sürükleme
   // ve düzenleme sırasında bu kayıtlardan sayfa bilgisine ulaşır).
@@ -18,9 +19,10 @@ export const state = {
   pageInfos: new Map(),
 
   // main.js tarafından atanan olay geri çağrıları
-  onTextPointerDown: null, // (fullMeta, key, el, evt) => void
-  onAreaPointerDown: null, // (rec, el, evt) => void
-  onPageMouseDown: null,   // (pageIndex, wrapEl, evt) => void
+  onTextPointerDown: null,   // (fullMeta, key, el, evt) => void
+  onAreaPointerDown: null,   // (rec, el, evt) => void
+  onPageMouseDown: null,     // (pageIndex, wrapEl, evt) => void
+  onResizeHandleDown: null,  // (rec, corner, evt) => void
 };
 
 export function textKey(page, index) {
@@ -63,4 +65,55 @@ export function resetAll() {
   state.itemRefs.clear();
   state.pageInfos.clear();
   state.nextAreaId = 1;
+  state.history.undo.length = 0;
+  state.history.redo.length = 0;
+}
+
+// ---------- Geri al / ileri al ----------
+// png/url/meta gibi hiç mutasyona uğramayan alanlar referansla paylaşılır;
+// yalnızca değişebilen alanların sığ kopyası alınır.
+function snapshot() {
+  return {
+    textEdits: [...state.textEdits.entries()].map(([k, r]) => [k, { ...r }]),
+    areas: [...state.areas.entries()].map(([k, r]) => [k, { ...r }]),
+  };
+}
+
+function restoreSnapshot(snap) {
+  state.textEdits = new Map(snap.textEdits.map(([k, r]) => [k, { ...r }]));
+  state.areas = new Map(snap.areas.map(([k, r]) => [k, { ...r }]));
+}
+
+const HISTORY_LIMIT = 60;
+
+// Bir değişiklikten HEMEN ÖNCE çağrılır: mevcut durumu geri al yığınına iter.
+export function pushUndo() {
+  state.history.undo.push(snapshot());
+  if (state.history.undo.length > HISTORY_LIMIT) state.history.undo.shift();
+  state.history.redo.length = 0;
+}
+
+export function canUndo() {
+  return state.history.undo.length > 0;
+}
+export function canRedo() {
+  return state.history.redo.length > 0;
+}
+
+export function undo() {
+  if (!canUndo()) return false;
+  const cur = snapshot();
+  const prev = state.history.undo.pop();
+  state.history.redo.push(cur);
+  restoreSnapshot(prev);
+  return true;
+}
+
+export function redo() {
+  if (!canRedo()) return false;
+  const cur = snapshot();
+  const next = state.history.redo.pop();
+  state.history.undo.push(cur);
+  restoreSnapshot(next);
+  return true;
 }

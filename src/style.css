@@ -71,6 +71,7 @@ body {
 .tbtn-text { font-size: 12.5px; padding: 0 10px; }
 .tbtn:hover { background: var(--ink-soft); }
 .tbtn.on { background: var(--red); border-color: var(--red); color: #fff; }
+.tbtn:disabled { opacity: 0.35; cursor: default; background: transparent; }
 .zoom-label { font-size: 12px; min-width: 42px; text-align: center; color: #b9bbc4; font-variant-numeric: tabular-nums; }
 
 .edit-count {
@@ -229,7 +230,8 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Metin kutuları (dokunulmamış) */
+/* Metin kutuları (dokunulmamış) — düzenlenebilir her alan sürekli hafif kesikli
+   çerçeveyle işaretlenir, böylece nereye tıklanabileceği hover beklemeden görülür */
 .titem {
   position: absolute;
   cursor: grab;
@@ -239,13 +241,15 @@ body {
   display: flex;
   align-items: flex-end;
   line-height: 1;
+  outline: 1px dashed rgba(53, 104, 212, 0.35);
+  outline-offset: -1px;
 }
-.titem:hover { box-shadow: inset 0 0 0 1.5px rgba(214, 69, 58, 0.5); background: var(--red-soft); }
-.titem.selected { box-shadow: inset 0 0 0 2px var(--blue); background: var(--blue-soft); }
+.titem:hover { box-shadow: inset 0 0 0 1.5px rgba(214, 69, 58, 0.5); background: var(--red-soft); outline-color: transparent; }
+.titem.selected { box-shadow: inset 0 0 0 2px var(--blue); background: var(--blue-soft); outline-color: transparent; }
 .titem:active { cursor: grabbing; }
 
 /* Düzenlenmiş metnin yeni konumdaki içeriği */
-.titem.edited { box-shadow: none; cursor: grab; }
+.titem.edited { box-shadow: none; cursor: grab; outline: none; }
 .titem.edited:hover { box-shadow: inset 0 0 0 1.5px rgba(214, 69, 58, 0.5); }
 .titem.edited.selected { box-shadow: inset 0 0 0 2px var(--blue); }
 
@@ -254,18 +258,22 @@ body {
   position: absolute;
   cursor: pointer;
   border-radius: 2px;
+  outline: 1px dashed rgba(53, 104, 212, 0.35);
+  outline-offset: -1px;
 }
-.tcover:hover { box-shadow: inset 0 0 0 1.5px rgba(214, 69, 58, 0.4); }
-.tcover.selected { box-shadow: inset 0 0 0 2px var(--blue); }
+.tcover:hover { box-shadow: inset 0 0 0 1.5px rgba(214, 69, 58, 0.4); outline-color: transparent; }
+.tcover.selected { box-shadow: inset 0 0 0 2px var(--blue); outline-color: transparent; }
 
 /* Alan (görsel/logo) kapatma + içerik */
 .acover {
   position: absolute;
   cursor: pointer;
   border-radius: 2px;
+  outline: 1px dashed rgba(53, 104, 212, 0.35);
+  outline-offset: -1px;
 }
-.acover:hover { box-shadow: inset 0 0 0 1.5px rgba(214, 69, 58, 0.4); }
-.acover.selected { box-shadow: inset 0 0 0 2px var(--blue); }
+.acover:hover { box-shadow: inset 0 0 0 1.5px rgba(214, 69, 58, 0.4); outline-color: transparent; }
+.acover.selected { box-shadow: inset 0 0 0 2px var(--blue); outline-color: transparent; }
 .aitem {
   position: absolute;
   cursor: grab;
@@ -275,6 +283,21 @@ body {
 .aitem.selected { box-shadow: 0 0 0 2px var(--blue); }
 .aitem:active { cursor: grabbing; }
 .aitem img { pointer-events: none; }
+
+/* Görsel/logo yeniden boyutlandırma tutamaçları (köşeden sürükle) */
+.rhandle {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  margin: -6px 0 0 -6px;
+  background: var(--page);
+  border: 2px solid var(--blue);
+  border-radius: 50%;
+  cursor: nwse-resize;
+  z-index: 5;
+}
+.rhandle.ne, .rhandle.sw { cursor: nesw-resize; }
+.rhandle:hover { background: var(--blue); }
 
 /* Alan yakalama (marquee) seçim kutusu */
 .marquee {

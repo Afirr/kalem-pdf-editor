@@ -215,6 +215,25 @@ export function renderAreaItem(wrap, pageInfo, rec) {
     content.appendChild(img);
     attachPointer(content, key, (ev) => state.onAreaPointerDown?.(rec, content, ev));
     wrap.appendChild(content);
+
+    if (selected) {
+      const left = x * s, top = topPdf * s, right = left + w * s, bottom = top + h * s;
+      const corners = [
+        ['nw', left, top], ['ne', right, top], ['sw', left, bottom], ['se', right, bottom],
+      ];
+      for (const [corner, cx, cy] of corners) {
+        const handle = document.createElement('div');
+        handle.className = `rhandle ${corner}`;
+        handle.dataset.key = key;
+        handle.style.left = `${cx}px`;
+        handle.style.top = `${cy}px`;
+        handle.addEventListener('mousedown', (ev) => {
+          ev.stopPropagation();
+          state.onResizeHandleDown?.(rec, corner, ev);
+        });
+        wrap.appendChild(handle);
+      }
+    }
   }
 }
 

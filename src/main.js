@@ -4,7 +4,10 @@ import {
   screenRectToPdf, cropToPng, refreshTextItem, refreshAreaItem, renderAreaItem,
   refreshSelectionClass, removeItemDOM,
 } from './pdfview.js';
-import { state, textKey, areaKey, syncText, editCount, resetAll } from './state.js';
+import {
+  state, textKey, areaKey, syncText, editCount, resetAll,
+  pushUndo, undo, redo, canUndo, canRedo,
+} from './state.js';
 import { bake } from './export.js';
 
 const $ = (id) => document.getElementById(id);
@@ -13,6 +16,7 @@ const els = {
   dropCard: $('dropCard'), pickBtn: $('pickBtn'), fileInput: $('fileInput'),
   filename: $('filename'), zoomGroup: $('zoomGroup'), toolGroup: $('toolGroup'),
   actionGroup: $('actionGroup'), areaToolBtn: $('areaToolBtn'),
+  undoBtn: $('undoBtn'), redoBtn: $('redoBtn'),
   zoomIn: $('zoomIn'), zoomOut: $('zoomOut'), zoomFit: $('zoomFit'), zoomLabel: $('zoomLabel'),
   editCount: $('editCount'), resetBtn: $('resetBtn'), newBtn: $('newBtn'), downloadBtn: $('downloadBtn'),
   propertyBar: $('propertyBar'),
@@ -27,6 +31,7 @@ const els = {
 const round1 = (n) => Math.round(n * 10) / 10;
 let activeTextDraft = null; // { key, rec } — tek metin seçiliyken özellik çubuğuna bağlı taslak
 let areaArmed = false;
+let textUndoPushed = false; // bir metin düzenleme oturumunda geri-al kaydı yalnız ilk değişiklikte itilir
 
 // ---------- PDF açma ----------
 async function loadFile(bytes, name) {
@@ -104,23 +109,34 @@ els.zoomOut.addEventListener('click', () => setScale(state.scale - 0.15));
 els.zoomFit.addEventListener('click', () => setScale(fitScale(els.workspace.clientWidth - 120)));
 
 // ---------- Seçim ----------
+// Alan (görsel/logo) öğelerinin yeniden boyutlandırma tutamaçları yalnızca tam bir
+// renderAreaItem çağrısında oluşturulur; salt CSS sınıfı değişimi (refreshSelectionClass)
+// bunları eklemez/kaldırmaz. Bu yüzden seçim değiştiğinde alan öğeleri için tam yeniden
+// çizim, metin öğeleri için ucuz sınıf değişimi kullanılır.
+function refreshSelectionVisual(key) {
+  const ref = state.itemRefs.get(key);
+  if (!ref) return;
+  if (ref.kind === 'area') refreshAreaItem(key);
+  else refreshSelectionClass(key);
+}
+
 function selectOnly(key) {
   const touched = new Set([...state.selected, key]);
   state.selected.clear();
   state.selected.add(key);
-  touched.forEach(refreshSelectionClass);
+  touched.forEach(refreshSelectionVisual);
   openPropertyBarForSelection();
 }
 function toggleSelect(key) {
   if (state.selected.has(key)) state.selected.delete(key);
   else state.selected.add(key);
-  refreshSelectionClass(key);
+  refreshSelectionVisual(key);
   openPropertyBarForSelection();
 }
 function clearSelectionUI() {
   const prev = [...state.selected];
   state.selected.clear();
-  prev.forEach(refreshSelectionClass);
+  prev.forEach(refreshSelectionVisual);
   closePropertyBar();
 }
 
@@ -196,6 +212,7 @@ function openPropertyBarForSelection() {
     els.pbTextRow.hidden = false;
     const rec = getOrCreateTextRecord(key);
     activeTextDraft = { key, rec };
+    textUndoPushed = false;
     els.pbText.value = rec.text;
     els.pbSize.value = round1(rec.size);
     els.pbColor.value = rec.color;
@@ -226,6 +243,7 @@ function closePropertyBar() {
 
 function onTextFieldChange() {
   if (!activeTextDraft) return;
+  if (!textUndoPushed) { pushUndo(); textUndoPushed = true; }
   const { key, rec } = activeTextDraft;
   rec.text = els.pbText.value;
   rec.size = parseFloat(els.pbSize.value) || rec.meta.fs;
@@ -262,6 +280,7 @@ function deleteItem(key) {
 els.pbDelete.addEventListener('click', () => {
   const sel = [...state.selected];
   if (!sel.length) return;
+  pushUndo();
   sel.forEach(deleteItem);
   updateCount();
   openPropertyBarForSelection();
@@ -270,6 +289,7 @@ els.pbDelete.addEventListener('click', () => {
 els.pbRevert.addEventListener('click', () => {
   const key = [...state.selected][0];
   if (!key) return;
+  pushUndo();
   const ref = state.itemRefs.get(key);
   if (ref.kind === 'text') {
     state.textEdits.delete(key);
@@ -288,7 +308,9 @@ els.pbRemove.addEventListener('click', () => {
   const key = [...state.selected][0];
   const rec = key && state.areas.get(key);
   if (!rec) return;
-  if (rec.url) URL.revokeObjectURL(rec.url);
+  pushUndo();
+  // Not: url burada iptal edilmiyor — "Kaldır" geri alınabilir bir eylem olduğu için
+  // nesne URL'si yalnızca tam sıfırlamada (yeni dosya/Sıfırla) serbest bırakılır.
   state.areas.delete(key);
   removeItemDOM(key);
   clearSelectionUI();
@@ -299,6 +321,7 @@ els.pbToggleHide.addEventListener('click', () => {
   const key = [...state.selected][0];
   const rec = key && state.areas.get(key);
   if (!rec) return;
+  pushUndo();
   rec.hidden = !rec.hidden;
   refreshAreaItem(key);
   refreshSelectionClass(key);
@@ -310,6 +333,7 @@ function nudgeScale(delta) {
   const key = [...state.selected][0];
   const rec = key && state.areas.get(key);
   if (!rec) return;
+  pushUndo();
   rec.scale = Math.min(3, Math.max(0.2, +(rec.scale + delta).toFixed(2)));
   refreshAreaItem(key);
   refreshSelectionClass(key);
@@ -343,6 +367,7 @@ function beginItemGesture(primaryKey, evt) {
     const dxPx = e.clientX - startX;
     const dyPx = e.clientY - startY;
     if (!dragging && Math.hypot(dxPx, dyPx) < 3) return;
+    if (!dragging) pushUndo(); // sürükleme gerçekten başlıyor: ilk kareden önce anlık görüntü al
     dragging = true;
     for (const k of dragKeys) {
       const ref = state.itemRefs.get(k);
@@ -364,6 +389,37 @@ function beginItemGesture(primaryKey, evt) {
       updateCount();
       openPropertyBarForSelection();
     }
+  }
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+}
+
+// ---------- Köşeden sürükleyerek yeniden boyutlandırma (görsel/logo) ----------
+function beginResizeGesture(rec, evt) {
+  evt.preventDefault();
+  const ref = state.itemRefs.get(rec.key);
+  const contentEl = ref?.wrap.querySelector(`.aitem[data-key="${CSS.escape(rec.key)}"]`);
+  if (!contentEl) return;
+  const box = contentEl.getBoundingClientRect();
+  const cx = box.left + box.width / 2;
+  const cy = box.top + box.height / 2;
+  const d0 = Math.hypot(evt.clientX - cx, evt.clientY - cy) || 1;
+  const scale0 = rec.scale;
+  let moved = false;
+
+  function onMove(e) {
+    const d1 = Math.hypot(e.clientX - cx, e.clientY - cy);
+    if (!moved && Math.abs(d1 - d0) < 2) return;
+    if (!moved) pushUndo();
+    moved = true;
+    rec.scale = Math.min(3, Math.max(0.2, +(scale0 * (d1 / d0)).toFixed(3)));
+    refreshAreaItem(rec.key);
+    refreshSelectionClass(rec.key);
+  }
+  function onUp() {
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+    if (moved) { updateCount(); openPropertyBarForSelection(); }
   }
   window.addEventListener('mousemove', onMove);
   window.addEventListener('mouseup', onUp);
@@ -416,6 +472,7 @@ async function captureArea(pageIdx, pageInfo, l, t, w, h) {
   const { bytes } = await cropToPng(pageInfo, l, t, w, h);
   const pdfRect = screenRectToPdf(pageInfo, l, t, w, h);
   const bg = sampleBgAround(pageInfo, l, t, w, h);
+  pushUndo();
   const id = state.nextAreaId++;
   const key = areaKey(id);
   const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
@@ -426,8 +483,14 @@ async function captureArea(pageIdx, pageInfo, l, t, w, h) {
     bg, png: bytes, url, hidden: false,
   };
   state.areas.set(key, rec);
+  // Seçimi çizimden ÖNCE güncelle: renderAreaItem "selected" durumuna göre tutamaçları
+  // yalnızca ilk çizimde ekler, sonradan refreshSelectionClass ile eklenemez.
+  const prevSelected = [...state.selected];
+  state.selected.clear();
+  state.selected.add(key);
   renderAreaItem(pageInfo.wrap, pageInfo, rec); // ilk çizim: henüz itemRefs'te yok, refreshAreaItem çalışmaz
-  selectOnly(key);
+  prevSelected.forEach(refreshSelectionVisual);
+  openPropertyBarForSelection();
   updateCount();
 }
 
@@ -439,6 +502,10 @@ state.onTextPointerDown = (fullMeta, key, el, evt) => {
 state.onAreaPointerDown = (rec, el, evt) => {
   if (areaArmed) { startMarquee(rec.page, state.itemRefs.get(rec.key).pageInfo, evt); return; }
   beginItemGesture(rec.key, evt);
+};
+state.onResizeHandleDown = (rec, corner, evt) => {
+  if (areaArmed) return;
+  beginResizeGesture(rec, evt);
 };
 state.onPageMouseDown = (pageIdx, wrap, evt) => {
   if (areaArmed) {
@@ -461,10 +528,16 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); download(); return; }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !inField) {
+    e.preventDefault();
+    if (e.shiftKey) doRedo(); else doUndo();
+    return;
+  }
   if (inField || !state.selected.size) return;
 
   if (e.key === 'Delete' || e.key === 'Backspace') {
     e.preventDefault();
+    pushUndo();
     [...state.selected].forEach(deleteItem);
     updateCount();
     openPropertyBarForSelection();
@@ -478,6 +551,7 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowDown') dyPt = -step;
   else return;
   e.preventDefault();
+  pushUndo();
   for (const key of state.selected) {
     const rec = getRecordForDrag(key);
     if (!rec) continue;
@@ -488,17 +562,34 @@ window.addEventListener('keydown', (e) => {
   updateCount();
 });
 
-// ---------- Sayaç / sıfırla / indir ----------
+// ---------- Sayaç / geri-al-ileri-al / sıfırla / indir ----------
 function updateCount() {
   const n = editCount();
   els.editCount.hidden = n === 0;
   els.editCount.textContent = n === 1 ? '1 düzeltme' : `${n} düzeltme`;
   els.downloadBtn.disabled = n === 0;
+  els.undoBtn.disabled = !canUndo();
+  els.redoBtn.disabled = !canRedo();
 }
+
+function doUndo() {
+  if (!undo()) return;
+  state.selected.clear();
+  closePropertyBar();
+  rerender();
+}
+function doRedo() {
+  if (!redo()) return;
+  state.selected.clear();
+  closePropertyBar();
+  rerender();
+}
+els.undoBtn.addEventListener('click', doUndo);
+els.redoBtn.addEventListener('click', doRedo);
 
 els.resetBtn.addEventListener('click', () => {
   if (!editCount()) return;
-  if (!confirm('Tüm düzeltmeler silinsin mi?')) return;
+  if (!confirm('Tüm düzeltmeler silinsin mi? Bu işlem geri alınamaz.')) return;
   revokeAllAreaUrls();
   resetAll();
   closePropertyBar();
