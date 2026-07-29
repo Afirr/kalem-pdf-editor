@@ -155,9 +155,6 @@ function mulMat(s, c) {
   ];
 }
 
-function rectsOverlap(a, b) {
-  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-}
 // Kesişim / birleşim oranı (0-1): iki dikdörtgenin ne kadar aynı yeri kapladığını ölçer.
 function rectIou(a, b) {
   const ix0 = Math.max(a.x, b.x), iy0 = Math.max(a.y, b.y);
@@ -231,6 +228,14 @@ function splitRegionAroundText(region, textBoxes) {
   return pieces;
 }
 
+// Yalnız neredeyse AYNI yeri kaplayan (IOU yüksek) kutuları tek bölgeye
+// birleştirir — ör. bir fotoğraf + üzerine tam oturan bir maske/parlaklık
+// katmanı. Salt "kutular değiyor" yeterli DEĞİL: bir logo görseli çoğu zaman
+// çok daha büyük bir arka plan fotoğrafının/dokusunun üstüne biner ve
+// kutuları örtüşür, ama ikisi ayrı, ayrı ayrı seçilebilir öğeler olmalı —
+// düşük IOU'da birleştirmek logoyu arka plana "kaynaklar" (kullanıcı logoyu
+// taşımaya çalıştığında altındaki fotoğrafın bir parçasını da sürüklemiş gibi
+// görünür).
 function mergeOverlapping(rects) {
   const list = rects.map((r) => ({ ...r }));
   let merged = true;
@@ -238,7 +243,7 @@ function mergeOverlapping(rects) {
     merged = false;
     for (let i = 0; i < list.length && !merged; i++) {
       for (let j = i + 1; j < list.length; j++) {
-        if (rectsOverlap(list[i], list[j])) {
+        if (rectIou(list[i], list[j]) >= 0.5) {
           const u = unionRect(list[i], list[j]);
           list.splice(j, 1);
           list.splice(i, 1);
