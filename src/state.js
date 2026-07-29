@@ -17,6 +17,12 @@ export const state = {
   customTexts: new Map(),
   nextCustomTextIndex: 1000000,
 
+  // Kullanıcının katman panelinden birden çok öğeyi "Birleştir" ile tek bir
+  // görsele dönüştürdüğü, PDF'in orijinal içeriğinde karşılığı olmayan
+  // bölgelerin taslak (meta) listesi: sayfa indeksi -> meta[].
+  customAreas: new Map(),
+  nextCustomAreaIndex: 2000000,
+
   // Son çizimde her anahtarın hangi sayfa/kutuya ait olduğunu tutar (main.js sürükleme,
   // yeniden boyutlandırma ve düzenleme sırasında bu kayıtlardan sayfa bilgisine ulaşır).
   itemRefs: new Map(),
@@ -67,6 +73,7 @@ export function syncText(rec) {
 
 export function isImageDirty(rec) {
   return (
+    rec.meta.custom || // "Birleştir" ile oluşturulan bölgenin orijinali yok, her zaman gerçek bir düzeltmedir
     Math.abs(rec.dx) > EPS ||
     Math.abs(rec.dy) > EPS ||
     Math.abs(rec.scale - 1) > EPS ||
@@ -93,6 +100,8 @@ export function resetAll() {
   state.pageInfos.clear();
   state.customTexts.clear();
   state.nextCustomTextIndex = 1000000;
+  state.customAreas.clear();
+  state.nextCustomAreaIndex = 2000000;
   state.editingKey = null;
   state.editingDraft = null;
   state.history.undo.length = 0;
@@ -107,6 +116,7 @@ function snapshot() {
     textEdits: [...state.textEdits.entries()].map(([k, r]) => [k, { ...r }]),
     areas: [...state.areas.entries()].map(([k, r]) => [k, { ...r }]),
     customTexts: [...state.customTexts.entries()].map(([k, list]) => [k, list.map((m) => ({ ...m }))]),
+    customAreas: [...state.customAreas.entries()].map(([k, list]) => [k, list.map((m) => ({ ...m }))]),
   };
 }
 
@@ -114,6 +124,7 @@ function restoreSnapshot(snap) {
   state.textEdits = new Map(snap.textEdits.map(([k, r]) => [k, { ...r }]));
   state.areas = new Map(snap.areas.map(([k, r]) => [k, { ...r }]));
   state.customTexts = new Map(snap.customTexts.map(([k, list]) => [k, list.map((m) => ({ ...m }))]));
+  state.customAreas = new Map(snap.customAreas.map(([k, list]) => [k, list.map((m) => ({ ...m }))]));
 }
 
 const HISTORY_LIMIT = 60;

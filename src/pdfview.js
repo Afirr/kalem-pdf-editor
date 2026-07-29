@@ -111,6 +111,9 @@ async function renderPage(num, container, doc) {
     const meta = { page: pageIdx, index, x: region.x, y: region.y, w: region.w, h: region.h };
     renderImageItem(wrap, pageInfo, meta);
   });
+
+  // ---- Katman panelinden "Birleştir" ile oluşturulan görsel bölgeler ----
+  (state.customAreas.get(pageIdx) || []).forEach((meta) => renderImageItem(wrap, pageInfo, meta));
 }
 
 // ---------- Görsel (logo/resim) otomatik algılama ----------
@@ -275,9 +278,12 @@ function detectImageRegions(page) {
           top.rects.push(r); // aktif bir Figure'ın parçası: onun bölgesine katılır
         } else if (strokeOps.has(pathOp)) {
           rawStrokes.push(r); // Figure dışı çizgi: yalnız IOU ile eşleşirse birleştirilir (yedek yöntem)
-        } else if (r.w <= 40 && r.h <= 40) {
-          rawImages.push(r); // Figure dışı küçük dolgu şekli: muhtemelen bağımsız bir ikon/sembol
         }
+        // Not: Figure dışı, tek başına küçük dolgu/çizgi şekillerini bağımsız bir
+        // görsel adayı sayma denemesi (ör. küçük ikonlar) geri alındı — boyut
+        // sezgisiyle "dekoratif sembol" ile "vektöre çevrilmiş metin karakteri"
+        // güvenilir ayırt edilemiyor; gerçek bir belgede paragraf metninin her
+        // birkaç harfi ayrı, gereksiz seçilebilir bir "görsel" hâline geliyordu.
       }
     }
 

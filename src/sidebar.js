@@ -117,8 +117,8 @@ export function refreshLayers() {
     label.textContent = labelFor(key, ref);
     row.appendChild(label);
 
-    row.addEventListener('click', () => {
-      onSelectLayer?.(key);
+    row.addEventListener('click', (ev) => {
+      onSelectLayer?.(key, ev, entries.map(([k]) => k));
       document.querySelector(`[data-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: 'nearest' });
     });
     layersEl.appendChild(row);

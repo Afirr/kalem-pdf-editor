@@ -2,10 +2,10 @@
 // köşeden yeniden boyutlandırma (metin + otomatik algılanan görsel), geri al/ileri al.
 import {
   openPdf, renderAll, fitScale, sampleTextColors, sampleBgAround,
-  cropToPng, refreshItem, renderTextItem, textBoxScreenRect, imageBoxScreenRect,
+  cropToPng, refreshItem, renderTextItem, renderImageItem, textBoxScreenRect, imageBoxScreenRect,
 } from './pdfview.js';
 import {
-  state, textKey, syncText, syncImage, editCount, resetAll,
+  state, textKey, imageKey, syncText, syncImage, editCount, resetAll,
   pushUndo, undo, redo, canUndo, canRedo,
 } from './state.js';
 import { bake } from './export.js';
@@ -24,7 +24,7 @@ const els = {
   propertyBar: $('propertyBar'),
   pbTextRow: $('pbTextRow'), pbSize: $('pbSize'), pbColor: $('pbColor'), pbBold: $('pbBold'), pbFont: $('pbFont'),
   pbAreaRow: $('pbAreaRow'), pbShrink: $('pbShrink'), pbGrow: $('pbGrow'), pbToggleHide: $('pbToggleHide'),
-  pbMultiRow: $('pbMultiRow'), pbMultiLabel: $('pbMultiLabel'),
+  pbMultiRow: $('pbMultiRow'), pbMultiLabel: $('pbMultiLabel'), pbMerge: $('pbMerge'),
   pbRevert: $('pbRevert'), pbDelete: $('pbDelete'), pbClose: $('pbClose'),
   hint: $('hint'), hintClose: $('hintClose'), dragVeil: $('dragVeil'),
 };
@@ -34,12 +34,28 @@ let activeTextDraft = null; // { key, rec } — seçili metnin özellik çubuğu
 let textUndoPushed = false; // bir düzenleme oturumunda geri-al kaydı yalnız ilk değişiklikte itilir
 let editSnapshot = null;    // satır içi düzenleme başlarken kaydın durumu (Escape ile iptal için)
 
+let lastLayerKey = null;
 initSidebar({
   workspace: els.workspace,
   thumbs: els.thumbStrip,
   layers: els.layersList,
   layersTitle: els.layersPageNum,
-  onSelect: (key) => selectOnly(key),
+  // Shift: aralık seçimi (son tıklanan katmandan buraya kadar); Ctrl/Cmd: tek
+  // tek ekle-çıkar; düz tıklama: yalnız bunu seç — canvas'taki sürükleme
+  // seçimiyle aynı davranış.
+  onSelect: (key, ev, pageKeys) => {
+    if (ev.shiftKey && lastLayerKey && pageKeys.includes(lastLayerKey)) {
+      const i0 = pageKeys.indexOf(lastLayerKey);
+      const i1 = pageKeys.indexOf(key);
+      const [a, b] = i0 < i1 ? [i0, i1] : [i1, i0];
+      selectKeys(pageKeys.slice(a, b + 1));
+    } else if (ev.metaKey || ev.ctrlKey) {
+      toggleSelect(key);
+    } else {
+      selectOnly(key);
+    }
+    lastLayerKey = key;
+  },
 });
 
 // ---------- PDF açma ----------
@@ -199,6 +215,14 @@ function clearSelectionUI() {
   state.selected.clear();
   prev.forEach(refreshItem);
   closePropertyBar();
+  refreshLayers();
+}
+function selectKeys(keys) {
+  const touched = new Set([...state.selected, ...keys]);
+  state.selected.clear();
+  keys.forEach((k) => state.selected.add(k));
+  touched.forEach(refreshItem);
+  openPropertyBarForSelection();
   refreshLayers();
 }
 
@@ -486,6 +510,71 @@ function itemScreenRect(ref, rec) {
     ? textBoxScreenRect(ref.meta, rec, ref.pageInfo)
     : imageBoxScreenRect(ref.meta, rec, ref.pageInfo);
 }
+function recForItem(key, ref) {
+  if (ref.kind === 'text') {
+    return state.textEdits.get(key) || (state.editingKey === key ? state.editingDraft : null);
+  }
+  return state.areas.get(key);
+}
+function unionScreenRect(a, b) {
+  const left = Math.min(a.left, b.left);
+  const top = Math.min(a.top, b.top);
+  const right = Math.max(a.left + a.width, b.left + b.width);
+  const bottom = Math.max(a.top + a.height, b.top + b.height);
+  return { left, top, width: right - left, height: bottom - top };
+}
+
+// Seçili birden çok öğeyi (metin ve/veya görsel karışık olabilir), o an
+// kapladıkları alanın anlık pikselini yakalayıp tek bir görsel bölgeye
+// dönüştürür. Otomatik algılamanın parçalara ayırdığı bir görseli (ör. bir
+// fotoğraf + ayrı algılanan bir süsleme) elle tek nesneye indirmek için —
+// algılama hatalı kaldığında kullanıcının kendi düzelttiği bir kaçış yolu.
+async function mergeSelected() {
+  const keys = [...state.selected];
+  if (keys.length < 2) return;
+  const refs = keys.map((k) => [k, state.itemRefs.get(k)]).filter(([, r]) => r);
+  if (refs.length < 2) return;
+  const pageInfo = refs[0][1].pageInfo;
+  if (!refs.every(([, r]) => r.pageInfo.page === pageInfo.page)) {
+    alert('Yalnızca aynı sayfadaki öğeler birleştirilebilir.');
+    return;
+  }
+
+  let rect = null;
+  for (const [key, ref] of refs) {
+    const r = itemScreenRect(ref, recForItem(key, ref));
+    rect = rect ? unionScreenRect(rect, r) : { ...r };
+  }
+  const PAD = 3; // kenardaki ince çizgi/gölge de dahil olsun
+  rect = { left: rect.left - PAD, top: rect.top - PAD, width: rect.width + PAD * 2, height: rect.height + PAD * 2 };
+
+  pushUndo();
+
+  const { bytes } = await cropToPng(pageInfo, rect.left, rect.top, rect.width, rect.height);
+  const bg = sampleBgAround(pageInfo, rect.left, rect.top, rect.width, rect.height);
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+
+  keys.forEach((key) => deleteItem(key));
+
+  const s = pageInfo.scale;
+  const w = rect.width / s, h = rect.height / s;
+  const x = rect.left / s;
+  const topPdf = rect.top / s;
+  const y = pageInfo.pdfH - topPdf - h;
+  const index = state.nextCustomAreaIndex++;
+  const meta = { page: pageInfo.page, index, x, y, w, h, custom: true };
+
+  const list = state.customAreas.get(pageInfo.page) || [];
+  list.push(meta);
+  state.customAreas.set(pageInfo.page, list);
+
+  const key = imageKey(pageInfo.page, index);
+  state.areas.set(key, { meta, dx: 0, dy: 0, scale: 1, hidden: false, bg, png: bytes, url });
+  renderImageItem(pageInfo.wrap, pageInfo, meta);
+  selectOnly(key);
+  updateCount();
+}
+els.pbMerge.addEventListener('click', mergeSelected);
 
 // Aynı sayfadaki (sürüklenenler hariç) tüm öğelerin kenar/merkez konumlarını toplar.
 function collectGuideCandidates(pageIdx, excludeKeys) {
