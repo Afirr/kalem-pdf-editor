@@ -106,7 +106,7 @@ async function renderPage(num, container, doc) {
   (state.customTexts.get(pageIdx) || []).forEach((meta) => renderTextItem(wrap, pageInfo, meta));
 
   // ---- Görsel öğeleri (otomatik algılanan) ----
-  const regions = await detectImageRegions(page);
+  const regions = await detectImageRegions(page, tc.items);
   regions.forEach((region, index) => {
     const meta = { page: pageIdx, index, x: region.x, y: region.y, w: region.w, h: region.h };
     renderImageItem(wrap, pageInfo, meta);
@@ -148,6 +148,48 @@ function unionRect(a, b) {
   const x1 = Math.max(a.x + a.w, b.x + b.w), y1 = Math.max(a.y + a.h, b.y + b.h);
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
+// Sayfadaki gerçek metin satırlarının sınır kutuları (PDF'in kendi, alttan
+// yukarı artan koordinat uzayında — detectImageRegions'ın ürettiği bölgelerle
+// aynı uzay). Döndürülmüş metin desteklenmiyor (renderTextItem ile tutarlı).
+function textBoxesFromItems(items) {
+  const boxes = [];
+  for (const it of items || []) {
+    if (!it.str || !it.str.trim()) continue;
+    const [a, b, c, d, e, f] = it.transform;
+    if (Math.abs(b) > 0.01 || Math.abs(c) > 0.01) continue;
+    const fs = Math.abs(d) || Math.abs(a);
+    if (!fs || !it.width) continue;
+    boxes.push({ x: e, y: f - fs * 0.29, w: it.width, h: fs * 1.16 });
+  }
+  return boxes;
+}
+
+// Bir görsel bölgesini, üstüne/altına/kenarına taşan gerçek metin
+// satırlarının dışında kalacak şekilde daraltır; metin bölgeyi neredeyse
+// tümüyle kaplıyorsa bölgeyi tümden eler (null). Böylece bir başlığın
+// arkasındaki dekoratif bant gibi bir görsel, üstündeki gerçek metni
+// "yutmaz" — aksi hâlde görsel taşındığında metin de onunla birlikte
+// sürüklenmiş gibi görünür (aslında yalnızca yakalanan pikselin parçası olur).
+function trimRegionAgainstText(region, textBoxes) {
+  let { x, y, w, h } = region;
+  for (const t of textBoxes) {
+    const ox = Math.min(x + w, t.x + t.w) - Math.max(x, t.x);
+    const oy = Math.min(y + h, t.y + t.h) - Math.max(y, t.y);
+    if (ox <= 0 || oy <= 0) continue;
+    if (oy <= ox) {
+      // metin bölgeyi enine kaplıyor (bir başlık satırı gibi): dikeyde kırp
+      if (t.y + t.h / 2 > y + h / 2) h = Math.min(h, Math.max(0, t.y - y));
+      else { const newY = t.y + t.h; h = Math.max(0, (y + h) - newY); y = newY; }
+    } else {
+      // metin bölgeyi boyuna kaplıyor: yatayda kırp
+      if (t.x + t.w / 2 > x + w / 2) w = Math.min(w, Math.max(0, t.x - x));
+      else { const newX = t.x + t.w; w = Math.max(0, (x + w) - newX); x = newX; }
+    }
+    if (w <= 4 || h <= 4) return null;
+  }
+  return { x, y, w, h };
+}
+
 function mergeOverlapping(rects) {
   const list = rects.map((r) => ({ ...r }));
   let merged = true;
@@ -171,7 +213,7 @@ function mergeOverlapping(rects) {
 
 const imageRegionCache = new WeakMap(); // pdf.js page nesnesi -> Promise<bölgeler>
 
-function detectImageRegions(page) {
+function detectImageRegions(page, textItems) {
   if (imageRegionCache.has(page)) return imageRegionCache.get(page);
   const promise = (async () => {
     const OPS = pdfjsLib.OPS;
@@ -301,7 +343,19 @@ function detectImageRegions(page) {
         break;
       }
     }
-    return mergeOverlapping(rawImages);
+    const merged = mergeOverlapping(rawImages);
+
+    // Bir görsel bölgesi (ör. bir başlığın arkasındaki dekoratif bant/leke
+    // grafiği), gerçek bir metin satırının bulunduğu alanı da kapsayabilir —
+    // bu durumda metin, görselin yakalanan pikseline "gömülü" kalır: görsel
+    // taşındığında metin de onunla birlikte gitmiş GİBİ görünür (aslında
+    // sadece o pikselin bir parçası olmuştur). Böyle bir çakışma varsa
+    // görsel bölgesini gerçek metnin dışında kalacak şekilde daraltıyoruz.
+    const textBoxes = textBoxesFromItems(textItems);
+    if (!textBoxes.length) return merged;
+    return merged
+      .map((r) => trimRegionAgainstText(r, textBoxes))
+      .filter(Boolean);
   })();
   imageRegionCache.set(page, promise);
   return promise;
