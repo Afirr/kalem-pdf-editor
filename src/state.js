@@ -27,6 +27,7 @@ export const state = {
   onImagePointerDown: null,  // (meta, key, el, evt) => void
   onPageMouseDown: null,     // (pageIndex, wrapEl, evt) => void
   onResizeHandleDown: null,  // (key, evt) => void
+  onDeleteClick: null,       // (key) => void
 };
 
 export function textKey(page, index) {

@@ -407,6 +407,100 @@ els.pbShrink.addEventListener('click', () => nudgeScale(-0.1));
 els.pbGrow.addEventListener('click', () => nudgeScale(0.1));
 els.pbClose.addEventListener('click', clearSelectionUI);
 
+// ---------- Hizalama kılavuzları (sayfa merkezi + diğer öğeler) ----------
+const SNAP_PX = 6;
+let guideElV = null, guideElH = null;
+
+function itemScreenRect(ref, rec) {
+  return ref.kind === 'text'
+    ? textBoxScreenRect(ref.meta, rec, ref.pageInfo)
+    : imageBoxScreenRect(ref.meta, rec, ref.pageInfo);
+}
+
+// Aynı sayfadaki (sürüklenenler hariç) tüm öğelerin kenar/merkez konumlarını toplar.
+function collectGuideCandidates(pageIdx, excludeKeys) {
+  const xs = new Set();
+  const ys = new Set();
+  for (const [key, ref] of state.itemRefs) {
+    if (ref.pageInfo.page !== pageIdx || excludeKeys.has(key)) continue;
+    let rec;
+    if (ref.kind === 'text') {
+      rec = state.textEdits.get(key);
+    } else {
+      rec = state.areas.get(key);
+      if (rec?.hidden) continue;
+    }
+    const r = itemScreenRect(ref, rec);
+    xs.add(r.left); xs.add(r.left + r.width); xs.add(r.left + r.width / 2);
+    ys.add(r.top); ys.add(r.top + r.height); ys.add(r.top + r.height / 2);
+  }
+  return { xs: [...xs], ys: [...ys] };
+}
+
+// rec.dx/dy'yi, eşiğin altındaysa en yakın aday değere kilitler; hangi kılavuzun
+// çizileceğini (ve katı mı kesikli mi olduğunu) döndürür.
+function applySnapAndGuides(ref, rec, candidates) {
+  const s = ref.pageInfo.scale;
+  const rect = itemScreenRect(ref, rec);
+  const left = rect.left, right = rect.left + rect.width, centerX = rect.left + rect.width / 2;
+  const top = rect.top, bottom = rect.top + rect.height, centerY = rect.top + rect.height / 2;
+  const pageCX = (ref.pageInfo.pdfW * s) / 2;
+  const pageCY = (ref.pageInfo.pdfH * s) / 2;
+
+  let guideX = null, solidX = false;
+  if (Math.abs(centerX - pageCX) < SNAP_PX) {
+    rec.dx += (pageCX - centerX) / s;
+    guideX = pageCX; solidX = true;
+  } else {
+    outerX: for (const cx of candidates.xs) {
+      for (const val of [left, right, centerX]) {
+        if (Math.abs(val - cx) < SNAP_PX) { rec.dx += (cx - val) / s; guideX = cx; break outerX; }
+      }
+    }
+  }
+
+  let guideY = null, solidY = false;
+  if (Math.abs(centerY - pageCY) < SNAP_PX) {
+    rec.dy += (centerY - pageCY) / s;
+    guideY = pageCY; solidY = true;
+  } else {
+    outerY: for (const cy of candidates.ys) {
+      for (const val of [top, bottom, centerY]) {
+        if (Math.abs(val - cy) < SNAP_PX) { rec.dy += (val - cy) / s; guideY = cy; break outerY; }
+      }
+    }
+  }
+  return { guideX, solidX, guideY, solidY };
+}
+
+function ensureGuideEls(wrap) {
+  if (!guideElV) { guideElV = document.createElement('div'); }
+  if (!guideElH) { guideElH = document.createElement('div'); }
+  if (guideElV.parentNode !== wrap) wrap.appendChild(guideElV);
+  if (guideElH.parentNode !== wrap) wrap.appendChild(guideElH);
+}
+function renderGuides(wrap, g) {
+  ensureGuideEls(wrap);
+  if (g.guideX != null) {
+    guideElV.className = 'align-guide v ' + (g.solidX ? 'solid' : 'dashed');
+    guideElV.style.left = `${g.guideX}px`;
+    guideElV.style.display = '';
+  } else {
+    guideElV.style.display = 'none';
+  }
+  if (g.guideY != null) {
+    guideElH.className = 'align-guide h ' + (g.solidY ? 'solid' : 'dashed');
+    guideElH.style.top = `${g.guideY}px`;
+    guideElH.style.display = '';
+  } else {
+    guideElH.style.display = 'none';
+  }
+}
+function removeGuides() {
+  guideElV?.remove();
+  guideElH?.remove();
+}
+
 // ---------- Sürükleme (tek/çoklu seçim) ----------
 function beginItemGesture(primaryKey, evt) {
   evt.preventDefault();
@@ -425,12 +519,19 @@ function beginItemGesture(primaryKey, evt) {
     if (rec) starts.set(k, { dx0: rec.dx, dy0: rec.dy });
   }
   let dragging = false;
+  let guideCandidates = null;
 
   function onMove(e) {
     const dxPx = e.clientX - startX;
     const dyPx = e.clientY - startY;
     if (!dragging && Math.hypot(dxPx, dyPx) < 3) return;
-    if (!dragging) pushUndo();
+    if (!dragging) {
+      pushUndo();
+      if (dragKeys.length === 1) {
+        const ref0 = state.itemRefs.get(dragKeys[0]);
+        guideCandidates = collectGuideCandidates(ref0.pageInfo.page, new Set(dragKeys));
+      }
+    }
     dragging = true;
     for (const k of dragKeys) {
       const ref = state.itemRefs.get(k);
@@ -440,12 +541,17 @@ function beginItemGesture(primaryKey, evt) {
       const rec = getRecordForDrag(k);
       rec.dx = start.dx0 + dxPx / s;
       rec.dy = start.dy0 - dyPx / s;
+      if (dragKeys.length === 1) {
+        const g = applySnapAndGuides(ref, rec, guideCandidates);
+        renderGuides(ref.pageInfo.wrap, g);
+      }
       applyRecord(k, rec);
     }
   }
   function onUp(e) {
     window.removeEventListener('mousemove', onMove);
     window.removeEventListener('mouseup', onUp);
+    removeGuides();
     if (!dragging) {
       const ref = state.itemRefs.get(primaryKey);
       if (ref?.kind === 'text') startTextEditing(primaryKey, e);
@@ -518,6 +624,12 @@ state.onPageMouseDown = () => {
 };
 state.onResizeHandleDown = (key, evt) => {
   beginResizeGesture(key, evt);
+};
+state.onDeleteClick = (key) => {
+  pushUndo();
+  deleteItem(key);
+  updateCount();
+  if (state.selected.has(key)) openPropertyBarForSelection();
 };
 els.workspace.addEventListener('mousedown', (e) => {
   if (e.target === els.workspace || e.target === els.pages) clearSelectionUI();

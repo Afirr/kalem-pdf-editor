@@ -37,7 +37,9 @@ async function renderPage(num, container, doc) {
   const pageIdx = num - 1;
   const page = await doc.getPage(num);
   const vp = page.getViewport({ scale: state.scale });
-  const pdfH = page.getViewport({ scale: 1 }).height;
+  const vp1 = page.getViewport({ scale: 1 });
+  const pdfH = vp1.height;
+  const pdfW = vp1.width;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
   const wrap = document.createElement('div');
@@ -69,7 +71,7 @@ async function renderPage(num, container, doc) {
   const ctx = canvas.getContext('2d');
   await page.render({ canvasContext: ctx, viewport: vp, transform: [dpr, 0, 0, dpr, 0, 0] }).promise;
 
-  const pageInfo = { canvas, dpr, pdfH, scale: state.scale, wrap, page: pageIdx };
+  const pageInfo = { canvas, dpr, pdfH, pdfW, scale: state.scale, wrap, page: pageIdx };
   state.pageInfos.set(pageIdx, pageInfo);
 
   // ---- Metin öğeleri ----
@@ -158,9 +160,11 @@ function detectImageRegions(page) {
   const promise = (async () => {
     const OPS = pdfjsLib.OPS;
     const { fnArray, argsArray } = await page.getOperatorList();
+    const strokeOps = new Set([OPS.stroke, OPS.closeStroke]);
     let ctm = [1, 0, 0, 1, 0, 0];
     const stack = [];
-    const raw = [];
+    const rawImages = [];
+    const rawStrokes = [];
     for (let i = 0; i < fnArray.length; i++) {
       const fn = fnArray[i];
       if (fn === OPS.save) stack.push(ctm);
@@ -174,10 +178,40 @@ function detectImageRegions(page) {
         const xs = c.map((p) => p[0]), ys = c.map((p) => p[1]);
         const x = Math.min(...xs), y = Math.min(...ys);
         const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
-        if (w > 4 && h > 4) raw.push({ x, y, w, h });
+        if (w > 4 && h > 4) rawImages.push({ x, y, w, h });
+      } else if (fn === OPS.constructPath) {
+        // args: [boyaOperatörü, alt-yol verisi, minMax] — pdf.js her yolun
+        // sınır kutusunu zaten hesaplayıp veriyor. Yalnızca çizgi (stroke) ile
+        // çizilmiş yolları aday alıyoruz: fotoğrafların etrafına çizilen
+        // dekoratif halka/çerçeveler genelde böyle, dolgu değil.
+        const [pathOp, , minMax] = argsArray[i];
+        if (strokeOps.has(pathOp) && minMax) {
+          const [mx0, my0, mx1, my1] = minMax;
+          const c = [[mx0, my0], [mx1, my0], [mx0, my1], [mx1, my1]].map(([x, y]) => [
+            ctm[0] * x + ctm[2] * y + ctm[4],
+            ctm[1] * x + ctm[3] * y + ctm[5],
+          ]);
+          const xs = c.map((p) => p[0]), ys = c.map((p) => p[1]);
+          const x = Math.min(...xs), y = Math.min(...ys);
+          const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
+          if (w > 4 && h > 4) rawStrokes.push({ x, y, w, h });
+        }
       }
     }
-    return mergeOverlapping(raw);
+    // Bir görselin sınırına yakın boyutta ve onunla örtüşen çizgi-yollarını
+    // (dekoratif halka/çerçeve) görselin bölgesine katar — aksi hâlde görsel
+    // taşındığında halka eski yerinde kalır.
+    const PAD = 2;
+    for (const st of rawStrokes) {
+      for (const im of rawImages) {
+        if (!rectsOverlap(st, im)) continue;
+        const ratioW = st.w / im.w, ratioH = st.h / im.h;
+        if (ratioW < 0.5 || ratioW > 2.5 || ratioH < 0.5 || ratioH > 2.5) continue;
+        rawImages.push({ x: st.x - PAD, y: st.y - PAD, w: st.w + PAD * 2, h: st.h + PAD * 2 });
+        break;
+      }
+    }
+    return mergeOverlapping(rawImages);
   })();
   imageRegionCache.set(page, promise);
   return promise;
@@ -219,6 +253,27 @@ function makeHandles(wrap, key, rect, onDown) {
     h.addEventListener('mousedown', (ev) => { ev.stopPropagation(); onDown(ev); });
     wrap.appendChild(h);
   }
+}
+// Seçili bir öğenin tüm çevresel arayüzünü (tutamaçlar + sil düğmesi) tek seferde ekler.
+function makeSelectionChrome(wrap, key, rect, onResizeDown) {
+  makeHandles(wrap, key, rect, onResizeDown);
+  makeKillButton(wrap, key, rect);
+}
+function makeKillButton(wrap, key, rect) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'kill-btn';
+  btn.title = 'Bu öğeyi sil';
+  btn.dataset.key = key;
+  btn.textContent = '×';
+  btn.style.left = `${rect.left + rect.width}px`;
+  btn.style.top = `${rect.top}px`;
+  btn.addEventListener('mousedown', (ev) => ev.stopPropagation());
+  btn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    state.onDeleteClick?.(key);
+  });
+  wrap.appendChild(btn);
 }
 
 // Bir metin kutusunun geçerli (rec varsa taşınmış/boyutlanmış, yoksa orijinal) ekran
@@ -268,7 +323,7 @@ export function renderTextItem(wrap, pageInfo, meta) {
     hit.style.paddingBottom = `${meta.fs * 0.18 * s}px`;
     attachPointer(hit, key, (ev) => state.onTextPointerDown?.(fullMeta, key, hit, ev));
     wrap.appendChild(hit);
-    if (selected) makeHandles(wrap, key, textBoxScreenRect(meta, null, pageInfo), (ev) => state.onResizeHandleDown?.(key, ev));
+    if (selected) makeSelectionChrome(wrap, key, textBoxScreenRect(meta, null, pageInfo), (ev) => state.onResizeHandleDown?.(key, ev));
     return;
   }
 
@@ -315,7 +370,7 @@ export function renderTextItem(wrap, pageInfo, meta) {
     wrap.appendChild(content);
   }
 
-  if (selected) makeHandles(wrap, key, textBoxScreenRect(meta, rec, pageInfo), (ev) => state.onResizeHandleDown?.(key, ev));
+  if (selected) makeSelectionChrome(wrap, key, textBoxScreenRect(meta, rec, pageInfo), (ev) => state.onResizeHandleDown?.(key, ev));
 }
 
 export function refreshTextItem(key) {
@@ -339,7 +394,7 @@ export function renderImageItem(wrap, pageInfo, meta) {
     setRect(hit, imageBoxScreenRect(meta, null, pageInfo));
     attachPointer(hit, key, (ev) => state.onImagePointerDown?.(meta, key, hit, ev));
     wrap.appendChild(hit);
-    if (selected) makeHandles(wrap, key, imageBoxScreenRect(meta, null, pageInfo), (ev) => state.onResizeHandleDown?.(key, ev));
+    if (selected) makeSelectionChrome(wrap, key, imageBoxScreenRect(meta, null, pageInfo), (ev) => state.onResizeHandleDown?.(key, ev));
     return;
   }
 
@@ -370,9 +425,9 @@ export function renderImageItem(wrap, pageInfo, meta) {
     }
     attachPointer(content, key, (ev) => state.onImagePointerDown?.(meta, key, content, ev));
     wrap.appendChild(content);
-    if (selected) makeHandles(wrap, key, rect, (ev) => state.onResizeHandleDown?.(key, ev));
+    if (selected) makeSelectionChrome(wrap, key, rect, (ev) => state.onResizeHandleDown?.(key, ev));
   } else if (selected) {
-    makeHandles(wrap, key, originalRect, (ev) => state.onResizeHandleDown?.(key, ev));
+    makeSelectionChrome(wrap, key, originalRect, (ev) => state.onResizeHandleDown?.(key, ev));
   }
 }
 

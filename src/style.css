@@ -8,6 +8,7 @@
   --red-soft: rgba(214, 69, 58, 0.12);
   --blue: #3568d4;
   --blue-soft: rgba(53, 104, 212, 0.14);
+  --guide: #ff2d8a;
   --text: #23252b;
   --muted: #7a7d87;
   --ui: -apple-system, "SF Pro Text", "Segoe UI", Roboto, Arial, sans-serif;
@@ -257,27 +258,25 @@ body {
    miras alınırsa contentEditable'da imleç/yazma çalışmaz — burada geri açılır. */
 .titem.edited[contenteditable="true"] { cursor: text; outline: none; user-select: text; }
 
-/* Orijinal konumdaki kapatma alanı (metin taşındığında/silindiğinde) */
+/* Orijinal konumdaki kapatma alanı (metin/görsel taşındığında/silindiğinde) — burada artık
+   hiçbir şey yok (zemin rengiyle kapatıldı), bu yüzden kesikli çerçeve BİLEREK yok: aksi
+   hâlde taşınan öğenin eski yerinde "hayalet kutu" izi kalıyormuş gibi görünüyordu. */
 .tcover {
   position: absolute;
   cursor: pointer;
   border-radius: 2px;
-  outline: 1px dashed rgba(53, 104, 212, 0.35);
-  outline-offset: -1px;
 }
-.tcover:hover { box-shadow: inset 0 0 0 1.5px rgba(214, 69, 58, 0.4); outline-color: transparent; }
-.tcover.selected { box-shadow: inset 0 0 0 2px var(--blue); outline-color: transparent; }
+.tcover:hover { box-shadow: inset 0 0 0 1.5px rgba(214, 69, 58, 0.4); }
+.tcover.selected { box-shadow: inset 0 0 0 2px var(--blue); }
 
 /* Alan (görsel/logo) kapatma + içerik */
 .acover {
   position: absolute;
   cursor: pointer;
   border-radius: 2px;
-  outline: 1px dashed rgba(53, 104, 212, 0.35);
-  outline-offset: -1px;
 }
-.acover:hover { box-shadow: inset 0 0 0 1.5px rgba(214, 69, 58, 0.4); outline-color: transparent; }
-.acover.selected { box-shadow: inset 0 0 0 2px var(--blue); outline-color: transparent; }
+.acover:hover { box-shadow: inset 0 0 0 1.5px rgba(214, 69, 58, 0.4); }
+.acover.selected { box-shadow: inset 0 0 0 2px var(--blue); }
 .aitem {
   position: absolute;
   cursor: grab;
@@ -315,6 +314,41 @@ body {
 }
 .rhandle.ne, .rhandle.sw { cursor: nesw-resize; }
 .rhandle:hover { background: var(--blue); }
+
+/* Seçili öğenin üstünde duran hızlı sil düğmesi */
+.kill-btn {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  background: var(--red);
+  color: #fff;
+  border: 2px solid var(--page);
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 6;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+.kill-btn:hover { filter: brightness(1.1); }
+
+/* Hizalama kılavuzları: sayfa merkeziyle hizalanınca düz, diğer öğelerle
+   hizalanınca kesikli pembe çizgi */
+.align-guide {
+  position: absolute;
+  pointer-events: none;
+  z-index: 7;
+}
+.align-guide.v { top: 0; bottom: 0; width: 0; }
+.align-guide.h { left: 0; right: 0; height: 0; }
+.align-guide.v.solid { border-left: 1.5px solid var(--guide); }
+.align-guide.v.dashed { border-left: 1.5px dashed var(--guide); }
+.align-guide.h.solid { border-top: 1.5px solid var(--guide); }
+.align-guide.h.dashed { border-top: 1.5px dashed var(--guide); }
 
 /* ---------- Boş durum ---------- */
 .empty {
