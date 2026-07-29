@@ -13,7 +13,7 @@ import { initSidebar, loadThumbnails, refreshLayers, moveLayer } from './sidebar
 
 const $ = (id) => document.getElementById(id);
 const els = {
-  workspace: $('workspace'), pages: $('pages'), empty: $('emptyState'),
+  workspace: $('workspace'), pages: $('pages'), empty: $('emptyState'), mainRow: $('mainRow'),
   dropCard: $('dropCard'), pickBtn: $('pickBtn'), fileInput: $('fileInput'),
   filename: $('filename'), zoomGroup: $('zoomGroup'), toolGroup: $('toolGroup'),
   actionGroup: $('actionGroup'),
@@ -366,6 +366,14 @@ function pruneIfEmptyCustom(key) {
 }
 
 // ---------- Özellik çubuğu ----------
+// Sabit (position:fixed) çubuk çalışma alanının üstünde yüzdüğü için, altındaki
+// sayfa içeriğinin çubuğun arkasında gizlenmemesi adına .main-row'u çubuğun
+// gerçek yüksekliği kadar aşağı iteriz. CSS'teki transition bu itmeyi
+// yumuşatır (bkz. .main-row), böylece seçimde ani bir sıçrama olmaz.
+function syncWorkspaceClearance() {
+  els.mainRow.style.marginTop = els.propertyBar.hidden ? '0px' : `${els.propertyBar.offsetHeight}px`;
+}
+
 function openPropertyBarForSelection() {
   const sel = [...state.selected];
   if (!sel.length) { closePropertyBar(); return; }
@@ -381,6 +389,7 @@ function openPropertyBarForSelection() {
     els.pbRevert.hidden = true;
     els.pbDelete.hidden = false;
     els.pbDelete.textContent = 'Seçilenleri sil';
+    syncWorkspaceClearance();
     return;
   }
 
@@ -411,11 +420,13 @@ function openPropertyBarForSelection() {
     els.pbRevert.hidden = !rec;
     els.pbDelete.hidden = true;
   }
+  syncWorkspaceClearance();
 }
 
 function closePropertyBar() {
   els.propertyBar.hidden = true;
   activeTextDraft = null;
+  syncWorkspaceClearance();
 }
 
 function onTextStyleChange() {

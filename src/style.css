@@ -104,11 +104,22 @@ body {
 }
 
 /* ---------- Sabit özellik çubuğu (seçili öğe) ---------- */
+/* position:fixed: normal akıştan çıkar, böylece kendi görünürlüğü
+   .main-row'un flex yüksekliğini anlık etkilemez. .main-row'un margin-top'u
+   (main.js -> syncWorkspaceClearance) çubuğun gerçek yüksekliğine göre ayarlanır
+   ve CSS transition ile YUMUŞAKÇA kayar — hem sayfanın çubuğun altında
+   gizli kalmasını hem de anlık sıçrayıp "titriyor" gibi görünmesini önler. */
 .propertybar {
+  position: fixed;
+  top: 52px;
+  left: 0;
+  right: 0;
+  z-index: 40;
   flex-shrink: 0;
   background: #f2efe8;
   border-bottom: 1px solid #d8d4c8;
   padding: 9px 16px;
+  box-shadow: 0 6px 14px rgba(30, 28, 22, 0.1);
 }
 .pb-row { display: flex; align-items: center; gap: 8px; }
 .pb-row + .pb-row { margin-top: 8px; }
@@ -207,6 +218,8 @@ body {
   flex: 1;
   display: flex;
   min-height: 0;
+  margin-top: 0px;
+  transition: margin-top 180ms ease-out;
 }
 .sidebar {
   width: 176px;
