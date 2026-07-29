@@ -9,6 +9,7 @@ import {
   pushUndo, undo, redo, canUndo, canRedo,
 } from './state.js';
 import { bake } from './export.js';
+import { initSidebar, loadThumbnails, refreshLayers } from './sidebar.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -16,6 +17,7 @@ const els = {
   dropCard: $('dropCard'), pickBtn: $('pickBtn'), fileInput: $('fileInput'),
   filename: $('filename'), zoomGroup: $('zoomGroup'), toolGroup: $('toolGroup'),
   actionGroup: $('actionGroup'),
+  sidebar: $('sidebar'), thumbStrip: $('thumbStrip'), layersList: $('layersList'), layersPageNum: $('layersPageNum'),
   undoBtn: $('undoBtn'), redoBtn: $('redoBtn'), addTextBtn: $('addTextBtn'),
   zoomIn: $('zoomIn'), zoomOut: $('zoomOut'), zoomFit: $('zoomFit'), zoomLabel: $('zoomLabel'),
   editCount: $('editCount'), resetBtn: $('resetBtn'), newBtn: $('newBtn'), downloadBtn: $('downloadBtn'),
@@ -31,6 +33,14 @@ const round1 = (n) => Math.round(n * 10) / 10;
 let activeTextDraft = null; // { key, rec } — seçili metnin özellik çubuğuna bağlı kaydı
 let textUndoPushed = false; // bir düzenleme oturumunda geri-al kaydı yalnız ilk değişiklikte itilir
 let editSnapshot = null;    // satır içi düzenleme başlarken kaydın durumu (Escape ile iptal için)
+
+initSidebar({
+  workspace: els.workspace,
+  thumbs: els.thumbStrip,
+  layers: els.layersList,
+  layersTitle: els.layersPageNum,
+  onSelect: (key) => selectOnly(key),
+});
 
 // ---------- PDF açma ----------
 async function loadFile(bytes, name) {
@@ -48,10 +58,12 @@ async function loadFile(bytes, name) {
   els.actionGroup.hidden = false;
   els.filename.hidden = false;
   els.filename.textContent = name;
+  els.sidebar.hidden = false;
   els.hint.hidden = localStorage.getItem('kalemHintSeen') === '1';
   closePropertyBar();
   state.scale = fitScale(els.workspace.clientWidth - 120);
   await rerender();
+  loadThumbnails(state.doc);
 }
 
 async function rerender() {
@@ -172,12 +184,14 @@ function selectOnly(key) {
   state.selected.add(key);
   touched.forEach(refreshItem);
   openPropertyBarForSelection();
+  refreshLayers();
 }
 function toggleSelect(key) {
   if (state.selected.has(key)) state.selected.delete(key);
   else state.selected.add(key);
   refreshItem(key);
   openPropertyBarForSelection();
+  refreshLayers();
 }
 function clearSelectionUI() {
   if (state.editingKey) commitTextEditing();
@@ -185,6 +199,7 @@ function clearSelectionUI() {
   state.selected.clear();
   prev.forEach(refreshItem);
   closePropertyBar();
+  refreshLayers();
 }
 
 // ---------- Satır içi metin düzenleme ----------
@@ -739,6 +754,7 @@ function updateCount() {
   els.downloadBtn.disabled = n === 0;
   els.undoBtn.disabled = !canUndo();
   els.redoBtn.disabled = !canRedo();
+  refreshLayers();
 }
 
 function doUndo() {

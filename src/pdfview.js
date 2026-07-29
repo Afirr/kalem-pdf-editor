@@ -178,6 +178,13 @@ function detectImageRegions(page) {
       OPS.fill, OPS.eoFill, OPS.fillStroke, OPS.eoFillStroke,
       OPS.closeFillStroke, OPS.closeEOFillStroke,
     ]);
+    // Doldur+çizgi (fillStroke vb.) birleşik operatörlerin de görünür bir
+    // çizgi bileşeni var — yalnız saf "stroke"da değil, bunlarda da kalınlık
+    // payı uygulanmazsa çizginin dış kenarı kalıntı olarak kalır.
+    const hasVisibleStroke = new Set([
+      OPS.stroke, OPS.closeStroke, OPS.fillStroke, OPS.eoFillStroke,
+      OPS.closeFillStroke, OPS.closeEOFillStroke,
+    ]);
     let ctm = [1, 0, 0, 1, 0, 0];
     const ctmStack = [];
     let lineWidth = 1; // PDF varsayılanı; OPS.setLineWidth ile güncellenir
@@ -256,7 +263,7 @@ function detectImageRegions(page) {
         if (!minMax || (!strokeOps.has(pathOp) && !fillOps.has(pathOp))) continue;
         let r = bboxFromMinMax(minMax);
         if (r.w <= 2 || r.h <= 2) continue;
-        if (strokeOps.has(pathOp)) {
+        if (hasVisibleStroke.has(pathOp)) {
           const scale = (Math.hypot(ctm[0], ctm[1]) + Math.hypot(ctm[2], ctm[3])) / 2;
           // Yarım çizgi kalınlığı + kenar yumuşatmanın (anti-aliasing) taşırdığı
           // birkaç pikseli de yutacak sabit bir güvenlik payı.

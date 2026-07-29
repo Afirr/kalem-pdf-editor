@@ -66,20 +66,31 @@
     </div>
   </div>
 
-  <main class="workspace" id="workspace">
-    <!-- Boş durum -->
-    <section class="empty" id="emptyState">
-      <div class="drop-card" id="dropCard">
-        <div class="drop-mark" aria-hidden="true">✎</div>
-        <h1>PDF'ini aç, metne tıkla, düzelt.</h1>
-        <p>Dosyayı buraya sürükle ya da bilgisayarından seç. Metne tıkla, doğrudan<br />düzenle. Görselleri ve logoları otomatik algılar, sürükleyip büyütebilirsin.</p>
-        <button class="pick-btn" id="pickBtn">PDF Seç</button>
+  <div class="main-row">
+    <!-- Sol panel: sayfa küçük resimleri + geçerli sayfanın katmanları -->
+    <aside class="sidebar" id="sidebar" hidden>
+      <div class="thumb-strip" id="thumbStrip"></div>
+      <div class="layers-panel">
+        <div class="layers-title">Sayfa <span id="layersPageNum">1</span> katmanları</div>
+        <div class="layers-list" id="layersList"></div>
       </div>
-    </section>
+    </aside>
 
-    <!-- Sayfalar -->
-    <div class="pages" id="pages"></div>
-  </main>
+    <main class="workspace" id="workspace">
+      <!-- Boş durum -->
+      <section class="empty" id="emptyState">
+        <div class="drop-card" id="dropCard">
+          <div class="drop-mark" aria-hidden="true">✎</div>
+          <h1>PDF'ini aç, metne tıkla, düzelt.</h1>
+          <p>Dosyayı buraya sürükle ya da bilgisayarından seç. Metne tıkla, doğrudan<br />düzenle. Görselleri ve logoları otomatik algılar, sürükleyip büyütebilirsin.</p>
+          <button class="pick-btn" id="pickBtn">PDF Seç</button>
+        </div>
+      </section>
+
+      <!-- Sayfalar -->
+      <div class="pages" id="pages"></div>
+    </main>
+  </div>
 
   <div class="hint" id="hint" hidden>
     <span>Metne <b>tıkla</b> → doğrudan yaz. <b>Sürükle</b> → taşı. <b>Köşeden çek</b> → büyüt/küçült. Görseller otomatik algılanır.</span>
