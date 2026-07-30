@@ -2,7 +2,10 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- maximum-scale=1: iOS Safari'nin, küçük puntolu düzenlenebilir metne
+       odaklanınca sayfayı zorla yakınlaştırıp öyle bırakmasını önler (kullanıcının
+       kendi parmak yakınlaştırması iOS 10'dan beri bundan etkilenmez). -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <title>Kalem — PDF Metin Düzenleyici</title>
   <link rel="stylesheet" href="/src/style.css" />
 </head>
@@ -48,23 +51,10 @@
         <option value="serif">Serif</option>
       </select>
     </div>
-    <div class="pb-row" id="pbAreaRow" hidden>
-      <span class="pb-label">Görsel / logo</span>
-      <button class="opt-btn" id="pbShrink" title="Küçült">−</button>
-      <button class="opt-btn" id="pbGrow" title="Büyüt">+</button>
-      <button class="tbtn tbtn-text" id="pbToggleHide">Gizle</button>
-    </div>
     <div class="pb-row" id="pbMultiRow" hidden>
       <span class="pb-label" id="pbMultiLabel">2 öğe seçili</span>
       <span class="pb-hint">Sürükleyerek birlikte taşı</span>
       <button class="tbtn tbtn-text" id="pbMerge" title="Seçili öğeleri tek bir görsele birleştir">Birleştir</button>
-    </div>
-    <div class="pb-row" id="pbOrderRow" hidden>
-      <span class="pb-label">Katman sırası</span>
-      <button class="opt-btn" id="pbBackward" title="Bir arkaya">↓</button>
-      <button class="opt-btn" id="pbForward" title="Bir öne">↑</button>
-      <button class="tbtn tbtn-text" id="pbToBack" title="En arkaya">En arkaya</button>
-      <button class="tbtn tbtn-text" id="pbToFront" title="En öne">En öne</button>
     </div>
     <div class="pb-row pb-actions">
       <button class="ghost-btn" id="pbRevert" hidden>Orijinale dön</button>
@@ -80,6 +70,23 @@
       <div class="thumb-strip" id="thumbStrip"></div>
       <div class="layers-panel">
         <div class="layers-title">Sayfa <span id="layersPageNum">1</span> katmanları</div>
+        <!-- Seçili öğenin katman/görsel araçları: özellik çubuğu yerine burada,
+             ekranı kapatmasın diye (mobil + masaüstü aynı) -->
+        <div class="layer-tools" id="layerTools" hidden>
+          <div class="lt-row" id="pbAreaRow" hidden>
+            <span class="lt-label">Görsel</span>
+            <button class="lt-btn" id="pbShrink" title="Küçült">−</button>
+            <button class="lt-btn" id="pbGrow" title="Büyüt">+</button>
+            <button class="lt-btn lt-text" id="pbToggleHide">Gizle</button>
+          </div>
+          <div class="lt-row" id="pbOrderRow" hidden>
+            <span class="lt-label">Sıra</span>
+            <button class="lt-btn" id="pbBackward" title="Bir arkaya">↓</button>
+            <button class="lt-btn" id="pbForward" title="Bir öne">↑</button>
+            <button class="lt-btn lt-text" id="pbToBack" title="En arkaya">Alta</button>
+            <button class="lt-btn lt-text" id="pbToFront" title="En öne">Üste</button>
+          </div>
+        </div>
         <div class="layers-list" id="layersList"></div>
       </div>
     </aside>

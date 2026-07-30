@@ -18,6 +18,7 @@ const els = {
   filename: $('filename'), zoomGroup: $('zoomGroup'), toolGroup: $('toolGroup'),
   actionGroup: $('actionGroup'),
   sidebar: $('sidebar'), thumbStrip: $('thumbStrip'), layersList: $('layersList'), layersPageNum: $('layersPageNum'),
+  layerTools: $('layerTools'),
   undoBtn: $('undoBtn'), redoBtn: $('redoBtn'), addTextBtn: $('addTextBtn'),
   zoomIn: $('zoomIn'), zoomOut: $('zoomOut'), zoomFit: $('zoomFit'), zoomLabel: $('zoomLabel'),
   editCount: $('editCount'), resetBtn: $('resetBtn'), newBtn: $('newBtn'), downloadBtn: $('downloadBtn'),
@@ -380,12 +381,23 @@ function pruneIfEmptyCustom(key) {
 }
 
 // ---------- Özellik çubuğu ----------
-// Sabit (position:fixed) çubuk çalışma alanının üstünde yüzdüğü için, altındaki
-// sayfa içeriğinin çubuğun arkasında gizlenmemesi adına .main-row'u çubuğun
-// gerçek yüksekliği kadar aşağı iteriz. CSS'teki transition bu itmeyi
-// yumuşatır (bkz. .main-row), böylece seçimde ani bir sıçrama olmaz.
+// Masaüstünde çubuk üstte sabit yüzer; .main-row, çubuğun gerçek yüksekliği
+// kadar yumuşak bir geçişle aşağı iter (içerik çubuğun altında gizlenmesin).
+// MOBİLDE ise çubuk ekranın ALTINA yapışır ve içeriği hiç itmez — aksi hâlde
+// dar ekranda çok yer kaplayan çubuk her seçimde tüm sayfayı aşağı itip
+// "her dokunuşta ekran kayıyor" hissi veriyordu ve düzenlenen metin görüş
+// alanından çıkabiliyordu.
+const mobileLayout = window.matchMedia('(max-width: 720px)');
 function syncWorkspaceClearance() {
-  els.mainRow.style.marginTop = els.propertyBar.hidden ? '0px' : `${els.propertyBar.offsetHeight}px`;
+  const clearance = (els.propertyBar.hidden || mobileLayout.matches) ? 0 : els.propertyBar.offsetHeight;
+  els.mainRow.style.marginTop = `${clearance}px`;
+}
+mobileLayout.addEventListener?.('change', syncWorkspaceClearance);
+
+// Katman/görsel araçları (sıra + küçült/büyüt/gizle) soldaki katman panelinde
+// yaşar; iki satırdan en az biri görünürse kapsayıcı da görünür.
+function syncLayerTools() {
+  els.layerTools.hidden = els.pbAreaRow.hidden && els.pbOrderRow.hidden;
 }
 
 function openPropertyBarForSelection() {
@@ -403,6 +415,7 @@ function openPropertyBarForSelection() {
     els.pbRevert.hidden = true;
     els.pbDelete.hidden = false;
     els.pbDelete.textContent = 'Seçilenleri sil';
+    syncLayerTools();
     syncWorkspaceClearance();
     return;
   }
@@ -434,12 +447,16 @@ function openPropertyBarForSelection() {
     els.pbRevert.hidden = !rec;
     els.pbDelete.hidden = true;
   }
+  syncLayerTools();
   syncWorkspaceClearance();
 }
 
 function closePropertyBar() {
   els.propertyBar.hidden = true;
   activeTextDraft = null;
+  els.pbAreaRow.hidden = true;
+  els.pbOrderRow.hidden = true;
+  syncLayerTools();
   syncWorkspaceClearance();
 }
 

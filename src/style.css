@@ -279,6 +279,34 @@ body {
   padding: 10px 12px 6px;
   flex-shrink: 0;
 }
+/* Seçili öğenin katman araçları — özellik çubuğu yerine burada, ekranı kapatmaz */
+.layer-tools {
+  flex-shrink: 0;
+  padding: 2px 8px 8px;
+  border-bottom: 1px solid #e3dfd3;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.lt-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.lt-label { font-size: 10.5px; font-weight: 600; color: var(--muted); width: 36px; flex-shrink: 0; }
+.lt-btn {
+  min-width: 24px;
+  height: 24px;
+  border: 1px solid #ddd9cf;
+  background: var(--page);
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text);
+  font-family: var(--ui);
+  flex-shrink: 0;
+  padding: 0;
+}
+.lt-btn:hover { border-color: var(--blue); color: var(--blue); }
+.lt-text { font-size: 10.5px; padding: 0 7px; font-weight: 500; }
+
 .layers-list {
   flex: 1;
   overflow-y: auto;
@@ -471,24 +499,31 @@ body {
 .rhandle.ne, .rhandle.sw { cursor: nesw-resize; }
 .rhandle:hover { background: var(--blue); }
 
-/* Seçili öğenin üstünde duran hızlı sil düğmesi */
+/* Seçili öğenin üstünde duran hızlı sil düğmesi — görünürde küçük, dokunma
+   hedefi ::before ile görünmez şekilde büyütülmüş (tutamaçlarla aynı desen) */
 .kill-btn {
   position: absolute;
-  width: 22px;
-  height: 22px;
-  margin: -11px 0 0 -11px;
+  width: 15px;
+  height: 15px;
+  margin: -8px 0 0 -8px;
   background: var(--red);
   color: #fff;
-  border: 2px solid var(--page);
+  border: 1.5px solid var(--page);
   border-radius: 50%;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 10px;
   line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 6;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  padding: 0;
+}
+.kill-btn::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
 }
 .kill-btn:hover { filter: brightness(1.1); }
 
@@ -598,7 +633,41 @@ body {
   pointer-events: none;
 }
 
+/* ---------- Mobil (dar ekran) ---------- */
 @media (max-width: 720px) {
   .filename { display: none; }
-  .propertybar .pb-row { flex-wrap: wrap; }
+  /* Üst çubuk taşarsa yatay kaydırılabilsin, düğmeler ekrandan düşmesin */
+  .toolbar { gap: 8px; padding: 0 8px; overflow-x: auto; }
+  .toolbar-group { flex-shrink: 0; }
+  .brand { font-size: 18px; }
+
+  /* Özellik çubuğu ekranın ALTINA yapışır ve içeriği hiç itmez —
+     main.js'teki syncWorkspaceClearance mobilde 0 boşluk bırakır, böylece
+     seçim yapınca sayfa zıplamaz ve düzenlenen metin görünür kalır. */
+  .propertybar {
+    top: auto;
+    bottom: 0;
+    border-bottom: none;
+    border-top: 1px solid #d8d4c8;
+    box-shadow: 0 -6px 14px rgba(30, 28, 22, 0.1);
+    padding: 6px 10px;
+  }
+  .propertybar .pb-row { flex-wrap: wrap; gap: 6px; }
+  .pb-row + .pb-row { margin-top: 5px; }
+  .pb-actions { margin-top: 6px !important; padding-top: 5px; }
+
+  /* Sol panel: daha dar, küçük resimler ve katman satırları daha kompakt */
+  .sidebar { width: 118px; }
+  .thumb-strip { padding: 8px; gap: 6px; flex-basis: 42%; }
+  .layers-title { font-size: 9.5px; padding: 8px 8px 4px; }
+  .layers-list { padding: 0 4px 8px; }
+  .layer-row { padding: 4px 5px; gap: 5px; }
+  .layer-handle { display: none; }
+  .layer-icon { width: 16px; height: 16px; font-size: 9px; border-radius: 4px; }
+  .layer-label { font-size: 11px; }
+  .layer-tools { padding: 2px 5px 6px; }
+  .lt-label { width: 100%; }
+
+  .pages { padding: 16px 8px 120px; gap: 16px; }
+  .hint { display: none; }
 }
