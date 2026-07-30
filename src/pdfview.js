@@ -7,6 +7,28 @@ import { state, textKey, imageKey } from './state.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
+// pdf.js'in getTextContent()'i içeride "for await (const chunk of stream)" ile
+// ReadableStream'i asenkron olarak dolaşıyor. Bu, WebKit/Safari'nin bazı
+// sürümlerinde (gerçek bir iOS Simulator'da doğrulandı — Safari kendini
+// "26.3" gibi yeni gösterse de ReadableStream[Symbol.asyncIterator] hâlâ
+// tanımsız olabiliyor) desteklenmiyor ve "undefined is not a function" hatasıyla
+// tüm sayfa metin/görsel algılamasını sessizce durduruyor — kullanıcı sayfayı
+// görüyor ama hiçbir şeyi seçemiyor/sürükleyemiyor. Standart polyfill.
+if (typeof ReadableStream !== 'undefined' && !ReadableStream.prototype[Symbol.asyncIterator]) {
+  ReadableStream.prototype[Symbol.asyncIterator] = async function* () {
+    const reader = this.getReader();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) return;
+        yield value;
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  };
+}
+
 export async function openPdf(bytes, name) {
   if (state.doc) {
     try { await state.doc.destroy(); } catch { /* önemsiz */ }
