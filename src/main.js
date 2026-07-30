@@ -107,26 +107,40 @@ els.fileInput.addEventListener('change', async () => {
   els.fileInput.value = '';
 });
 
-// Sürükle-bırak (dosya açma)
-let dragDepth = 0;
-window.addEventListener('dragenter', (e) => {
-  if (![...e.dataTransfer.types].includes('Files')) return;
-  dragDepth++;
+// Sürükle-bırak (dosya açma) — giriş/çıkış sayacı yerine "son dragover'dan bu
+// yana ne kadar geçti" tabanlı: enter/leave çiftleri alt öğe sınırlarını her
+// geçişte tetiklendiği için (özellikle mobilde uygulamalar arası sürüklemede)
+// simetrik gelmeyebiliyor ve perde hiç kapanmadan takılı kalabiliyordu. Ayrıca
+// perde, tıklanınca da kapanır — sayaç yine de bir şekilde şaşarsa çıkış yolu olsun.
+let dragHideTimer = null;
+function showDragVeil() {
+  clearTimeout(dragHideTimer);
   els.dragVeil.hidden = false;
   els.dropCard.classList.add('over');
-});
-window.addEventListener('dragleave', () => {
-  if (--dragDepth <= 0) { dragDepth = 0; els.dragVeil.hidden = true; els.dropCard.classList.remove('over'); }
-});
-window.addEventListener('dragover', (e) => e.preventDefault());
-window.addEventListener('drop', async (e) => {
-  e.preventDefault();
-  dragDepth = 0;
+  dragHideTimer = setTimeout(hideDragVeil, 300);
+}
+function hideDragVeil() {
+  clearTimeout(dragHideTimer);
   els.dragVeil.hidden = true;
   els.dropCard.classList.remove('over');
+}
+window.addEventListener('dragenter', (e) => {
+  if (![...e.dataTransfer.types].includes('Files')) return;
+  showDragVeil();
+});
+window.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  if (![...e.dataTransfer.types].includes('Files')) return;
+  showDragVeil();
+});
+window.addEventListener('dragend', hideDragVeil);
+window.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  hideDragVeil();
   const file = [...e.dataTransfer.files].find((f) => /\.pdf$/i.test(f.name));
   if (file) loadFile(new Uint8Array(await file.arrayBuffer()), file.name);
 });
+els.dragVeil.addEventListener('click', hideDragVeil);
 
 // ---------- Yakınlaştırma ----------
 function setScale(s) {
@@ -329,7 +343,7 @@ els.addTextBtn.addEventListener('click', () => setAddTextMode(!addTextMode));
 function placeNewText(pageIdx, wrap, evt) {
   const pageInfo = state.pageInfos.get(pageIdx);
   if (!pageInfo) return;
-  evt.preventDefault(); // varsayılan mousedown odak davranışı, aşağıdaki .focus()'u hemen çalmasın
+  evt.preventDefault(); // varsayılan pointerdown odak davranışı, aşağıdaki .focus()'u hemen çalmasın
   setAddTextMode(false);
   const rect = wrap.getBoundingClientRect();
   const s = pageInfo.scale;
@@ -736,8 +750,8 @@ function beginItemGesture(primaryKey, evt) {
     }
   }
   function onUp(e) {
-    window.removeEventListener('mousemove', onMove);
-    window.removeEventListener('mouseup', onUp);
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
     removeGuides();
     if (!dragging) {
       const ref = state.itemRefs.get(primaryKey);
@@ -748,8 +762,8 @@ function beginItemGesture(primaryKey, evt) {
       openPropertyBarForSelection();
     }
   }
-  window.addEventListener('mousemove', onMove);
-  window.addEventListener('mouseup', onUp);
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
 }
 
 // ---------- Köşeden sürükleyerek yeniden boyutlandırma (metin + görsel) ----------
@@ -790,12 +804,12 @@ function beginResizeGesture(key, evt) {
     refreshItem(key);
   }
   function onUp() {
-    window.removeEventListener('mousemove', onMove);
-    window.removeEventListener('mouseup', onUp);
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
     if (moved) { updateCount(); openPropertyBarForSelection(); }
   }
-  window.addEventListener('mousemove', onMove);
-  window.addEventListener('mouseup', onUp);
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
 }
 
 // ---------- Olay yönlendirme (pdfview.js -> main.js) ----------
@@ -819,7 +833,7 @@ state.onDeleteClick = (key) => {
   updateCount();
   if (state.selected.has(key)) openPropertyBarForSelection();
 };
-els.workspace.addEventListener('mousedown', (e) => {
+els.workspace.addEventListener('pointerdown', (e) => {
   if (e.target === els.workspace || e.target === els.pages) clearSelectionUI();
 });
 

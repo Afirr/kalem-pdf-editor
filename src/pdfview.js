@@ -60,7 +60,7 @@ async function renderPage(num, container, doc) {
   pageNo.textContent = num;
   wrap.appendChild(pageNo);
 
-  wrap.addEventListener('mousedown', (ev) => {
+  wrap.addEventListener('pointerdown', (ev) => {
     if (ev.target === wrap || ev.target === canvas || ev.target === pageNo) {
       state.onPageMouseDown?.(pageIdx, wrap, ev);
     }
@@ -422,7 +422,7 @@ function setRect(el, r) {
 }
 function attachPointer(el, key, handler) {
   el.dataset.key = key;
-  el.addEventListener('mousedown', (ev) => {
+  el.addEventListener('pointerdown', (ev) => {
     ev.stopPropagation();
     handler(ev, el);
   });
@@ -440,7 +440,7 @@ function makeHandles(wrap, key, rect, onDown) {
     h.dataset.key = key;
     h.style.left = `${cx}px`;
     h.style.top = `${cy}px`;
-    h.addEventListener('mousedown', (ev) => { ev.stopPropagation(); onDown(ev); });
+    h.addEventListener('pointerdown', (ev) => { ev.stopPropagation(); onDown(ev); });
     wrap.appendChild(h);
   }
 }
@@ -458,7 +458,7 @@ function makeKillButton(wrap, key, rect) {
   btn.textContent = '×';
   btn.style.left = `${rect.left + rect.width}px`;
   btn.style.top = `${rect.top}px`;
-  btn.addEventListener('mousedown', (ev) => ev.stopPropagation());
+  btn.addEventListener('pointerdown', (ev) => ev.stopPropagation());
   btn.addEventListener('click', (ev) => {
     ev.stopPropagation();
     state.onDeleteClick?.(key);
@@ -523,7 +523,7 @@ export function renderTextItem(wrap, pageInfo, meta) {
   positionAt(cover, meta.x, pageInfo.pdfH - meta.yBase - meta.fs * 0.87, meta.w, meta.fs * 1.16, s);
   cover.style.background = rec.bg;
   if (!editing) {
-    cover.addEventListener('mousedown', (ev) => {
+    cover.addEventListener('pointerdown', (ev) => {
       ev.stopPropagation();
       state.onTextPointerDown?.(fullMeta, key, cover, ev);
     });
@@ -557,7 +557,7 @@ export function renderTextItem(wrap, pageInfo, meta) {
       content.contentEditable = 'true';
       content.spellcheck = false;
     } else {
-      content.addEventListener('mousedown', (ev) => {
+      content.addEventListener('pointerdown', (ev) => {
         ev.stopPropagation();
         state.onTextPointerDown?.(fullMeta, key, content, ev);
       });

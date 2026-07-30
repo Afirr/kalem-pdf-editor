@@ -384,6 +384,10 @@ body {
   line-height: 1;
   outline: 1px dashed rgba(53, 104, 212, 0.35);
   outline-offset: -1px;
+  /* Dokunmatikte tarayıcının sayfayı kaydırma jestini burada devre dışı
+     bırakır — aksi hâlde parmakla sürüklemeye çalışınca sayfa kayar,
+     pointermove olayları JS'e hiç ulaşmaz. */
+  touch-action: none;
 }
 .titem:hover { box-shadow: inset 0 0 0 1.5px rgba(214, 69, 58, 0.5); background: var(--red-soft); outline-color: transparent; }
 .titem.selected { box-shadow: inset 0 0 0 2px var(--blue); background: var(--blue-soft); outline-color: transparent; }
@@ -405,6 +409,7 @@ body {
   position: absolute;
   cursor: pointer;
   border-radius: 2px;
+  touch-action: none;
 }
 .tcover:hover { box-shadow: inset 0 0 0 1.5px rgba(214, 69, 58, 0.4); }
 .tcover.selected { box-shadow: inset 0 0 0 2px var(--blue); }
@@ -414,6 +419,7 @@ body {
   position: absolute;
   cursor: pointer;
   border-radius: 2px;
+  touch-action: none;
 }
 .acover:hover { box-shadow: inset 0 0 0 1.5px rgba(214, 69, 58, 0.4); }
 .acover.selected { box-shadow: inset 0 0 0 2px var(--blue); }
@@ -421,6 +427,7 @@ body {
   position: absolute;
   cursor: grab;
   border-radius: 2px;
+  touch-action: none;
 }
 .aitem:hover { box-shadow: 0 0 0 1.5px rgba(214, 69, 58, 0.5); }
 .aitem.selected { box-shadow: 0 0 0 2px var(--blue); }
@@ -435,12 +442,15 @@ body {
   border-radius: 2px;
   outline: 1px dashed rgba(53, 104, 212, 0.35);
   outline-offset: -1px;
+  touch-action: none;
 }
 .aitem-hit:hover { box-shadow: inset 0 0 0 1.5px rgba(214, 69, 58, 0.5); outline-color: transparent; }
 .aitem-hit.selected { box-shadow: inset 0 0 0 2px var(--blue); outline-color: transparent; }
 .aitem-hit:active { cursor: grabbing; }
 
-/* Görsel/logo yeniden boyutlandırma tutamaçları (köşeden sürükle) */
+/* Görsel/logo yeniden boyutlandırma tutamaçları (köşeden sürükle) — görünen
+   daire küçük kalsın diye, dokunma hedefini ::before ile görünmez şekilde
+   büyütüyoruz (11px'lik bir daire parmakla neredeyse hiç tutulamaz). */
 .rhandle {
   position: absolute;
   width: 11px;
@@ -451,6 +461,12 @@ body {
   border-radius: 50%;
   cursor: nwse-resize;
   z-index: 5;
+  touch-action: none;
+}
+.rhandle::before {
+  content: '';
+  position: absolute;
+  inset: -13px;
 }
 .rhandle.ne, .rhandle.sw { cursor: nesw-resize; }
 .rhandle:hover { background: var(--blue); }
