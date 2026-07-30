@@ -3,15 +3,9 @@
 //   konumda) Türkçe destekli gömülü fontla yazılır.
 // - Alan (görsel/logo): orijinal bölge zemin rengiyle kapatılır, gizlenmediyse
 //   yakalanan PNG (taşınmış/yeniden boyutlandırılmışsa yeni konum ve boyutta) basılır.
-import { PDFDocument, rgb } from 'pdf-lib';
+import { PDFDocument, rgb, degrees } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
-
-const FONT_FILES = {
-  sans: '/fonts/Arial.ttf',
-  'sans-bold': '/fonts/Arial-Bold.ttf',
-  serif: '/fonts/Times.ttf',
-  'serif-bold': '/fonts/Times-Bold.ttf',
-};
+import { FONTS } from './fonts.js';
 
 function hexToRgb(hex) {
   const n = parseInt(hex.slice(1), 16);
@@ -23,14 +17,15 @@ export async function bake(bytes, textEdits, areas) {
   doc.registerFontkit(fontkit);
 
   const fontCache = {};
-  const getFont = async (serif, bold) => {
-    const key = (serif ? 'serif' : 'sans') + (bold ? '-bold' : '');
-    if (!fontCache[key]) {
-      const res = await fetch(FONT_FILES[key]);
-      if (!res.ok) throw new Error(`Font yüklenemedi: ${FONT_FILES[key]}`);
-      fontCache[key] = await doc.embedFont(await res.arrayBuffer(), { subset: true });
+  const getFont = async (fontKey, bold) => {
+    const fam = FONTS[fontKey] || FONTS.arial;
+    const file = bold ? fam.boldFile : fam.file;
+    if (!fontCache[file]) {
+      const res = await fetch(file);
+      if (!res.ok) throw new Error(`Font yüklenemedi: ${file}`);
+      fontCache[file] = await doc.embedFont(await res.arrayBuffer(), { subset: true });
     }
-    return fontCache[key];
+    return fontCache[file];
   };
 
   // ---- Metinler ----
@@ -51,16 +46,38 @@ export async function bake(bytes, textEdits, areas) {
 
     if (!rec.text) continue; // silinmiş: sadece kapat, yeniden yazma
 
-    const font = await getFont(rec.serif, rec.bold);
+    const font = await getFont(rec.font, rec.bold);
     const size = rec.size;
     const lines = rec.text.split('\n');
     const lineH = size * 1.25;
     const x = rec.meta.x + rec.dx;
     const yBase = rec.meta.yBase + rec.dy;
+    const color = hexToRgb(rec.color);
+    // İtalik: ayrı italik TTF taşımak yerine harf eğimiyle (shear) benzetilir —
+    // tarayıcı önizlemesindeki sentetik italikle aynı yaklaşım. PDF metin
+    // matrisinde harfleri sağa yatıran bileşen ySkew'dur (xSkew satır TABANINI
+    // yatırır — canlı denemede yanlış eksen olduğu görüldü).
+    const skew = rec.italic ? degrees(12) : undefined;
 
     lines.forEach((line, i) => {
       if (!line) return;
-      page.drawText(line, { x, y: yBase - i * lineH, size, font, color: hexToRgb(rec.color) });
+      const y = yBase - i * lineH;
+      const w = font.widthOfTextAtSize(line, size);
+      if (rec.fillBg) {
+        page.drawRectangle({
+          x: x - 1.5, y: y - size * 0.26, width: w + 3, height: size * 1.32,
+          color: hexToRgb(rec.fillBg),
+        });
+      }
+      page.drawText(line, { x, y, size, font, color, ySkew: skew });
+      // Altı/üstü çizili: metin rengiyle ince şeritler
+      const lineThickness = Math.max(0.5, size * 0.055);
+      if (rec.underline) {
+        page.drawRectangle({ x, y: y - size * 0.16, width: w, height: lineThickness, color });
+      }
+      if (rec.strike) {
+        page.drawRectangle({ x, y: y + size * 0.27, width: w, height: lineThickness, color });
+      }
     });
   }
 

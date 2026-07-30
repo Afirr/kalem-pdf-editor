@@ -61,7 +61,8 @@ export function isTextDirty(rec) {
     rec.text !== rec.meta.str ||
     Math.abs(rec.size - rec.meta.fs) > EPS ||
     rec.bold !== rec.meta.bold ||
-    rec.serif !== rec.meta.serif ||
+    rec.font !== rec.meta.font ||
+    rec.italic || rec.underline || rec.strike || !!rec.fillBg ||
     rec.color !== rec.baseColor ||
     Math.abs(rec.dx) > EPS ||
     Math.abs(rec.dy) > EPS

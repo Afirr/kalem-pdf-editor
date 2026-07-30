@@ -10,6 +10,7 @@ import {
 } from './state.js';
 import { bake } from './export.js';
 import { initSidebar, loadThumbnails, refreshLayers, moveLayer } from './sidebar.js';
+import { FONTS } from './fonts.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -24,6 +25,8 @@ const els = {
   editCount: $('editCount'), resetBtn: $('resetBtn'), newBtn: $('newBtn'), downloadBtn: $('downloadBtn'),
   propertyBar: $('propertyBar'),
   pbTextRow: $('pbTextRow'), pbSize: $('pbSize'), pbColor: $('pbColor'), pbBold: $('pbBold'), pbFont: $('pbFont'),
+  pbItalic: $('pbItalic'), pbUnderline: $('pbUnderline'), pbStrike: $('pbStrike'),
+  pbFillBg: $('pbFillBg'), pbFillClear: $('pbFillClear'), pbFontRaw: $('pbFontRaw'),
   pbAreaRow: $('pbAreaRow'), pbShrink: $('pbShrink'), pbGrow: $('pbGrow'), pbToggleHide: $('pbToggleHide'),
   pbMultiRow: $('pbMultiRow'), pbMultiLabel: $('pbMultiLabel'), pbMerge: $('pbMerge'),
   pbOrderRow: $('pbOrderRow'), pbBackward: $('pbBackward'), pbForward: $('pbForward'),
@@ -88,7 +91,14 @@ async function loadFile(bytes, name) {
 
 async function rerender() {
   els.zoomLabel.textContent = Math.round(state.scale * 100) + '%';
+  // Tam yeniden çizim sayfaları silip baştan kurar; bu sırada içerik yüksekliği
+  // sıfırlanıp kaydırma en başa zıplıyordu (özellikle Ctrl+Z'de "ekran kayıyor"
+  // şikayeti). Konumu saklayıp çizim bitince geri veriyoruz.
+  const scrollTop = els.workspace.scrollTop;
+  const scrollLeft = els.workspace.scrollLeft;
   await renderAll(els.pages);
+  els.workspace.scrollTop = scrollTop;
+  els.workspace.scrollLeft = scrollLeft;
   updateCount();
   if (state.selected.size) openPropertyBarForSelection();
 }
@@ -167,7 +177,11 @@ function getOrCreateTextRecord(key) {
     color: sampled.color,
     baseColor: sampled.color,
     bold: fm.bold,
-    serif: fm.serif,
+    font: fm.font || 'arial', // PDF'teki gerçek adından otomatik eşlenen aile
+    italic: false,
+    underline: false,
+    strike: false,
+    fillBg: null, // kullanıcının seçtiği vurgu/dolgu rengi (yoksa null)
     bg: sampled.bg,
     dx: 0,
     dy: 0,
@@ -352,7 +366,7 @@ function placeNewText(pageIdx, wrap, evt) {
   const x = (evt.clientX - rect.left) / s;
   const yBase = pageInfo.pdfH - (evt.clientY - rect.top) / s - fs * 0.87;
   const index = state.nextCustomTextIndex++;
-  const meta = { page: pageIdx, index, str: '', x, yBase, w: 24, fs, bold: false, serif: false, custom: true };
+  const meta = { page: pageIdx, index, str: '', x, yBase, w: 24, fs, bold: false, font: 'arial', fontRaw: '', custom: true };
 
   pushUndo();
   const list = state.customTexts.get(pageIdx) || [];
@@ -434,7 +448,13 @@ function openPropertyBarForSelection() {
     els.pbSize.value = round1(rec.size);
     els.pbColor.value = rec.color;
     els.pbBold.classList.toggle('on', rec.bold);
-    els.pbFont.value = rec.serif ? 'serif' : 'sans';
+    els.pbItalic.classList.toggle('on', !!rec.italic);
+    els.pbUnderline.classList.toggle('on', !!rec.underline);
+    els.pbStrike.classList.toggle('on', !!rec.strike);
+    els.pbFillClear.classList.toggle('on', !rec.fillBg);
+    if (rec.fillBg) els.pbFillBg.value = rec.fillBg;
+    els.pbFont.value = FONTS[rec.font] ? rec.font : 'arial';
+    els.pbFontRaw.textContent = rec.meta.fontRaw ? `Özgün: ${rec.meta.fontRaw}` : '';
     els.pbRevert.hidden = !state.textEdits.has(key);
     els.pbDelete.hidden = false;
     els.pbDelete.textContent = 'Sil';
@@ -460,6 +480,15 @@ function closePropertyBar() {
   syncWorkspaceClearance();
 }
 
+// Yazı tipi listesi tek kaynaktan (fonts.js) doldurulur
+for (const [fkey, f] of Object.entries(FONTS)) {
+  const opt = document.createElement('option');
+  opt.value = fkey;
+  opt.textContent = f.label;
+  opt.style.fontFamily = f.css;
+  els.pbFont.appendChild(opt);
+}
+
 function onTextStyleChange() {
   if (!activeTextDraft) return;
   if (!textUndoPushed) { pushUndo(); textUndoPushed = true; }
@@ -467,7 +496,11 @@ function onTextStyleChange() {
   rec.size = parseFloat(els.pbSize.value) || rec.meta.fs;
   rec.color = els.pbColor.value;
   rec.bold = els.pbBold.classList.contains('on');
-  rec.serif = els.pbFont.value === 'serif';
+  rec.italic = els.pbItalic.classList.contains('on');
+  rec.underline = els.pbUnderline.classList.contains('on');
+  rec.strike = els.pbStrike.classList.contains('on');
+  rec.fillBg = els.pbFillClear.classList.contains('on') ? null : els.pbFillBg.value;
+  rec.font = els.pbFont.value;
   syncText(rec);
   refreshItem(key);
   els.pbRevert.hidden = !state.textEdits.has(key);
@@ -477,6 +510,11 @@ els.pbSize.addEventListener('input', onTextStyleChange);
 els.pbColor.addEventListener('input', onTextStyleChange);
 els.pbFont.addEventListener('change', onTextStyleChange);
 els.pbBold.addEventListener('click', () => { els.pbBold.classList.toggle('on'); onTextStyleChange(); });
+els.pbItalic.addEventListener('click', () => { els.pbItalic.classList.toggle('on'); onTextStyleChange(); });
+els.pbUnderline.addEventListener('click', () => { els.pbUnderline.classList.toggle('on'); onTextStyleChange(); });
+els.pbStrike.addEventListener('click', () => { els.pbStrike.classList.toggle('on'); onTextStyleChange(); });
+els.pbFillBg.addEventListener('input', () => { els.pbFillClear.classList.remove('on'); onTextStyleChange(); });
+els.pbFillClear.addEventListener('click', () => { els.pbFillClear.classList.add('on'); onTextStyleChange(); });
 
 function deleteItem(key) {
   const ref = state.itemRefs.get(key);

@@ -1,4 +1,19 @@
 /* Kalem — düzeltmen kırmızısı + mürekkep + kağıt */
+
+/* Metin düzenlemede seçilebilen fontlar — dışa aktarmada gömülen TTF'lerle
+   birebir aynı dosyalar (bkz. src/fonts.js). Tarayıcı bunları yalnız
+   kullanıldıklarında indirir. */
+@font-face { font-family: 'Montserrat'; src: url('/fonts/Montserrat.ttf'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Montserrat'; src: url('/fonts/Montserrat-Bold.ttf'); font-weight: 700; font-display: swap; }
+@font-face { font-family: 'Open Sans'; src: url('/fonts/OpenSans.ttf'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Open Sans'; src: url('/fonts/OpenSans-Bold.ttf'); font-weight: 700; font-display: swap; }
+@font-face { font-family: 'Playfair Display'; src: url('/fonts/Playfair.ttf'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Playfair Display'; src: url('/fonts/Playfair-Bold.ttf'); font-weight: 700; font-display: swap; }
+@font-face { font-family: 'Cousine'; src: url('/fonts/Cousine.ttf'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Cousine'; src: url('/fonts/Cousine-Bold.ttf'); font-weight: 700; font-display: swap; }
+@font-face { font-family: 'Dancing Script'; src: url('/fonts/DancingScript.ttf'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Dancing Script'; src: url('/fonts/DancingScript-Bold.ttf'); font-weight: 700; font-display: swap; }
+
 :root {
   --ink: #22252d;
   --ink-soft: #343845;

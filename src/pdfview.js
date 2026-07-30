@@ -4,6 +4,7 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { state, textKey, imageKey } from './state.js';
+import { FONTS, detectFontKey, prettyFontName } from './fonts.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -105,7 +106,8 @@ async function renderPage(num, container, doc) {
     const fam = tc.styles[fn]?.fontFamily || 'sans-serif';
     fontInfo[fn] = {
       bold: /bold|black|heavy|semi|extrab/i.test(realName),
-      serif: /serif/i.test(fam) && !/sans/i.test(fam),
+      font: detectFontKey(realName, fam), // PDF'teki gerçek adından en yakın aile
+      fontRaw: prettyFontName(realName),
     };
   }
 
@@ -123,7 +125,8 @@ async function renderPage(num, container, doc) {
     const meta = {
       page: pageIdx, index, str: it.str, x: e, yBase: f, w: it.width, fs,
       bold: fontInfo[it.fontName]?.bold || false,
-      serif: fontInfo[it.fontName]?.serif || false,
+      font: fontInfo[it.fontName]?.font || 'arial',
+      fontRaw: fontInfo[it.fontName]?.fontRaw || '',
     };
     textMetas.set(textKey(pageIdx, index), meta);
   });
@@ -565,13 +568,18 @@ export function renderTextItem(wrap, pageInfo, meta) {
     // kapatılır. Metin taşınmışsa arka planı boyamak, eski (uyuşmayan) bir
     // renk yamasının metinle birlikte sürüklenmiş gibi görünmesine yol açar.
     const moved = Math.abs(rec.dx) > 0.02 || Math.abs(rec.dy) > 0.02;
-    content.style.background = moved ? 'transparent' : rec.bg;
+    // Kullanıcının seçtiği dolgu rengi (vurgu) her durumda kazanır; yoksa eski
+    // "orijinal konumda zemin rengi, taşınmışsa saydam" davranışı sürer.
+    content.style.background = rec.fillBg || (moved ? 'transparent' : rec.bg);
     content.style.color = rec.color;
     content.style.fontSize = `${rec.size * s}px`;
-    content.style.fontFamily = rec.serif
-      ? 'Georgia, "Times New Roman", serif'
-      : 'Arial, Helvetica, sans-serif';
+    content.style.fontFamily = (FONTS[rec.font] || FONTS.arial).css;
     content.style.fontWeight = rec.bold ? '700' : '400';
+    content.style.fontStyle = rec.italic ? 'italic' : 'normal';
+    content.style.textDecoration = [
+      rec.underline ? 'underline' : '',
+      rec.strike ? 'line-through' : '',
+    ].filter(Boolean).join(' ') || 'none';
     content.style.width = 'max-content';
     content.style.whiteSpace = 'pre';
     content.textContent = rec.text;

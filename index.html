@@ -36,7 +36,6 @@
   <!-- Sabit özellik çubuğu: seçili öğeye göre içerik değişir, hiçbir zaman metnin yanında açılmaz -->
   <div class="propertybar" id="propertyBar" hidden>
     <div class="pb-row" id="pbTextRow" hidden>
-      <span class="pb-label">Metin — belgede doğrudan düzenle</span>
       <label class="field" title="Punto">
         <span>Boyut</span>
         <input type="number" id="pbSize" min="4" max="140" step="0.5" />
@@ -46,10 +45,16 @@
         <input type="color" id="pbColor" />
       </label>
       <button class="opt-btn" id="pbBold" title="Kalın">K</button>
-      <select id="pbFont" title="Yazı tipi">
-        <option value="sans">Sans</option>
-        <option value="serif">Serif</option>
-      </select>
+      <button class="opt-btn" id="pbItalic" title="İtalik"><i>T</i></button>
+      <button class="opt-btn" id="pbUnderline" title="Altı çizili"><u>A</u></button>
+      <button class="opt-btn" id="pbStrike" title="Üstü çizili"><s>S</s></button>
+      <label class="field" title="Metnin arkasına dolgu (vurgu) rengi">
+        <span>Dolgu</span>
+        <input type="color" id="pbFillBg" value="#fff59d" />
+      </label>
+      <button class="opt-btn" id="pbFillClear" title="Dolguyu kaldır">⊘</button>
+      <select id="pbFont" title="Yazı tipi"></select>
+      <span class="pb-hint" id="pbFontRaw" title="PDF'teki özgün font"></span>
     </div>
     <div class="pb-row" id="pbMultiRow" hidden>
       <span class="pb-label" id="pbMultiLabel">2 öğe seçili</span>
