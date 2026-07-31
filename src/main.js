@@ -8,9 +8,9 @@ import {
   state, textKey, imageKey, syncText, syncImage, editCount, resetAll,
   pushUndo, undo, redo, canUndo, canRedo,
 } from './state.js';
-import { bake } from './export.js';
+import { bake } from './engine/export.js';
 import { initSidebar, loadThumbnails, refreshLayers, moveLayer } from './sidebar.js';
-import { FONTS } from './fonts.js';
+import { FONTS } from './engine/fonts.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
