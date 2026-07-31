@@ -2,10 +2,12 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8" />
-  <!-- maximum-scale=1: iOS Safari'nin, küçük puntolu düzenlenebilir metne
-       odaklanınca sayfayı zorla yakınlaştırıp öyle bırakmasını önler (kullanıcının
-       kendi parmak yakınlaştırması iOS 10'dan beri bundan etkilenmez). -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <!-- maximum-scale KASITLI OLARAK yok: pinch-zoom erişilebilirlik için açık
+       bırakılıyor. iOS Safari'nin küçük puntolu alana odaklanınca zorla
+       yakınlaştırmasını, viewport'u kısıtlayarak değil, tüm odaklanabilir
+       alanların (özellik çubuğu + canvas'taki düzenlenen metin, bkz.
+       pdfview.js renderTextItem) font-size'ını >=16px tutarak önlüyoruz. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Kalem — PDF Metin Düzenleyici</title>
   <link rel="stylesheet" href="/src/style.css" />
 </head>
@@ -31,6 +33,8 @@
       <button class="tbtn tbtn-text" id="newBtn" title="Başka bir PDF aç">Yeni PDF</button>
       <button class="download-btn" id="downloadBtn">PDF'i İndir</button>
     </div>
+    <button class="tbtn" id="toolbarMoreBtn" title="Diğer" hidden>⋯</button>
+    <div class="toolbar-overflow" id="toolbarOverflow" hidden></div>
   </header>
 
   <!-- Sabit özellik çubuğu: seçili öğeye göre içerik değişir, hiçbir zaman metnin yanında açılmaz -->

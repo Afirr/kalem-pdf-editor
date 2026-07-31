@@ -11,7 +11,6 @@ let layersTitleEl = null;
 let onSelectLayer = null;
 let onReorderLayers = null;
 let currentPage = 0;
-let dragKey = null;
 
 export function initSidebar({ workspace, thumbs, layers, layersTitle, onSelect, onReorder }) {
   workspaceEl = workspace;
@@ -119,11 +118,15 @@ export function refreshLayers() {
     row.className = 'layer-row' + (state.selected.has(key) ? ' selected' : '');
     row.dataset.key = key;
     row.tabIndex = 0;
-    row.draggable = true;
 
     const handle = document.createElement('span');
     handle.className = 'layer-handle';
     handle.textContent = '⋮⋮';
+    // Sürükleme yalnızca bu tutamaçtan başlar (satırın tamamından değil) —
+    // katman satırları dar/bitişik olduğundan tüm satıra touch-action:none
+    // koymak dikey liste kaydırmasını dokunmatikte neredeyse imkânsız
+    // yapardı. Tutamaç dışı alan touch-action:auto kalır (bkz. style.css).
+    handle.addEventListener('pointerdown', (ev) => beginLayerDragGesture(row, ev));
     row.appendChild(handle);
 
     const icon = document.createElement('span');
@@ -141,49 +144,58 @@ export function refreshLayers() {
       document.querySelector(`[data-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: 'nearest' });
     });
 
-    row.addEventListener('dragstart', (ev) => {
-      dragKey = key;
-      ev.dataTransfer.effectAllowed = 'move';
-      row.classList.add('dragging');
-    });
-    row.addEventListener('dragend', () => {
-      row.classList.remove('dragging');
-      dragKey = null;
-      layersEl.querySelectorAll('.layer-row.drag-over').forEach((el) => el.classList.remove('drag-over'));
-    });
-    row.addEventListener('dragover', (ev) => {
-      if (!dragKey || dragKey === key) return;
-      ev.preventDefault();
-      ev.dataTransfer.dropEffect = 'move';
-      row.classList.add('drag-over');
-    });
-    row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
-    row.addEventListener('drop', (ev) => {
-      ev.preventDefault();
-      row.classList.remove('drag-over');
-      if (!dragKey || dragKey === key) return;
-      reorderWithinPage(currentPage, dragKey, key);
-      dragKey = null;
-      onReorderLayers?.();
-    });
-
     layersEl.appendChild(row);
   }
 }
 
-// Sürüklenen katmanı, hedef katmanın GÖRÜNÜR (üstten alta) konumuna yerleştirir
-// — hedef bir alt sıraya kayar. zOrder dizisi alttan üste tutulduğundan burada
-// önce ters çevrilip (görünür sıra), işlem sonrası tekrar ters çevrilir.
-function reorderWithinPage(pageIdx, movedKey, targetKey) {
-  const order = state.zOrder.get(pageIdx);
-  if (!order) return;
-  const display = [...order].reverse();
-  const fromIdx = display.indexOf(movedKey);
-  if (fromIdx === -1 || display.indexOf(targetKey) === -1) return;
-  display.splice(fromIdx, 1);
-  const toIdx = display.indexOf(targetKey);
-  display.splice(toIdx, 0, movedKey);
-  setZOrder(pageIdx, display.reverse());
+// Tutamaçtan başlayan sürükle-sırala jesti — main.js'teki beginItemGesture'ın
+// pointerdown->window pointermove/pointerup deseniyle tutarlı (3px eşik, aynı
+// mesafe kuralı), ama main.js'in aksine setPointerCapture KULLANILMIYOR
+// (main.js'te de kullanılmıyor — bilinçli, tutarlı bir tercih).
+function beginLayerDragGesture(row, evt) {
+  evt.preventDefault();
+  const startY = evt.clientY;
+  let dragging = false;
+
+  function onMove(e) {
+    const dy = e.clientY - startY;
+    if (!dragging && Math.abs(dy) < 3) return;
+    if (!dragging) { dragging = true; row.classList.add('dragging'); }
+    const target = rowAfterPoint(e.clientY);
+    if (target !== row.nextSibling) layersEl.insertBefore(row, target);
+  }
+  function onUp() {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    row.classList.remove('dragging');
+    if (!dragging) return; // gerçek sürükleme olmadıysa row'un kendi 'click' listener'ı zaten tetiklenir
+    const newOrder = [...layersEl.querySelectorAll('.layer-row')].map((r) => r.dataset.key);
+    applyNewLayerOrder(currentPage, newOrder);
+    onReorderLayers?.();
+  }
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+}
+
+// Sürüklenen satırın üstünden bırakılacağı satırı (görünür/üstten-alta sırada)
+// bulur; imleç en alttaki satırın da altındaysa null döner (listenin sonuna ekle).
+function rowAfterPoint(y) {
+  const rows = [...layersEl.querySelectorAll('.layer-row:not(.dragging)')];
+  return rows.reduce(
+    (closest, r) => {
+      const box = r.getBoundingClientRect();
+      const offset = y - box.top - box.height / 2;
+      return offset < 0 && offset > closest.offset ? { offset, element: r } : closest;
+    },
+    { offset: Number.NEGATIVE_INFINITY, element: null },
+  ).element;
+}
+
+// DOM'un son (sürükleme sonrası) hâlinden zOrder'ı türetir. zOrder alttan
+// üste tutulur, liste görünümü üstten alta olduğundan ters çevrilir (bkz.
+// refreshLayers'taki .reverse()).
+function applyNewLayerOrder(pageIdx, displayOrderTopToBottom) {
+  setZOrder(pageIdx, [...displayOrderTopToBottom].reverse());
 }
 
 // Seçili tek katmanı bir öne/arkaya ya da en öne/arkaya taşır.

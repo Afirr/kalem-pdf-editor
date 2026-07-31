@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "kalem",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeExecutable": "C:\\Users\\Administrator\\Documents\\pdf-editor\\.claude\\dev-with-path.cmd",
+      "runtimeArgs": [],
       "port": 5199
     }
   ]

@@ -11,6 +11,8 @@ import {
 import { bake } from './engine/export.js';
 import { initSidebar, loadThumbnails, refreshLayers, moveLayer } from './sidebar.js';
 import { FONTS } from './engine/fonts.js';
+import { exportPdf } from './platform/index.js';
+import { initToolbarOverflow } from './toolbarOverflow.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -23,6 +25,7 @@ const els = {
   undoBtn: $('undoBtn'), redoBtn: $('redoBtn'), addTextBtn: $('addTextBtn'),
   zoomIn: $('zoomIn'), zoomOut: $('zoomOut'), zoomFit: $('zoomFit'), zoomLabel: $('zoomLabel'),
   editCount: $('editCount'), resetBtn: $('resetBtn'), newBtn: $('newBtn'), downloadBtn: $('downloadBtn'),
+  toolbarMoreBtn: $('toolbarMoreBtn'), toolbarOverflow: $('toolbarOverflow'),
   propertyBar: $('propertyBar'),
   pbTextRow: $('pbTextRow'), pbSize: $('pbSize'), pbColor: $('pbColor'), pbBold: $('pbBold'), pbFont: $('pbFont'),
   pbItalic: $('pbItalic'), pbUnderline: $('pbUnderline'), pbStrike: $('pbStrike'),
@@ -63,6 +66,18 @@ initSidebar({
     lastLayerKey = key;
   },
   onReorder: () => rerender(),
+});
+
+initToolbarOverflow({
+  toolbar: document.querySelector('.toolbar'),
+  moreBtn: els.toolbarMoreBtn,
+  overflowPanel: els.toolbarOverflow,
+  zoomGroup: els.zoomGroup,
+  zoomGroupAnchor: els.toolGroup,
+  actionGroup: els.actionGroup,
+  resetBtn: els.resetBtn,
+  newBtn: els.newBtn,
+  reinsertBefore: els.downloadBtn,
 });
 
 // ---------- PDF açma ----------
@@ -971,12 +986,8 @@ async function download() {
   els.downloadBtn.textContent = 'Hazırlanıyor…';
   try {
     const out = await bake(state.bytes, state.textEdits, state.areas);
-    const blob = new Blob([out], { type: 'application/pdf' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = state.name.replace(/\.pdf$/i, '') + '-duzenlenmis.pdf';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    const name = state.name.replace(/\.pdf$/i, '') + '-duzenlenmis.pdf';
+    await exportPdf(out, name);
   } catch (err) {
     alert('PDF oluşturulamadı: ' + err.message);
   } finally {

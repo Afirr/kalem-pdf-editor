@@ -296,8 +296,19 @@ export function renderTextItem(wrap, pageInfo, meta) {
     content.dataset.key = key;
     const left = meta.x + rec.dx;
     const topPdf = pageInfo.pdfH - (meta.yBase + rec.dy) - rec.size * 0.87;
-    positionAt(content, left, topPdf, meta.w, rec.size * 1.16, s);
-    content.style.paddingBottom = `${rec.size * 0.18 * s}px`;
+
+    // iOS Safari, font-size < 16px olan bir alana odaklanınca sayfayı zorla
+    // yakınlaştırır. Küçük punto metinleri (ör. 8pt başlık) görsel olarak
+    // KÜÇÜLTMEDEN bu zoom'u önlemek için: gerçek font-size'ı hep 16px'e
+    // sabitleyip transform:scale(ratio) ile görsel boyutu geri telafi
+    // ediyoruz (ratio>=1 olduğunda — yani punto zaten 16px+ ise — formül
+    // otomatik olarak transform'suz eski davranışa eşitleniyor).
+    const trueFontPx = rec.size * s;
+    const BASE_PX = 16;
+    const ratio = Math.min(1, trueFontPx / BASE_PX);
+
+    positionAt(content, left, topPdf, meta.w / ratio, (rec.size * 1.16) / ratio, s);
+    content.style.paddingBottom = `${(rec.size * 0.18 * s) / ratio}px`;
     // Zemin rengi yalnızca metin hâlâ ORİJİNAL konumundaysa (altındaki cover
     // ile aynı yerde) uygulanır — dışa aktarımda da yalnız orijinal konum
     // kapatılır. Metin taşınmışsa arka planı boyamak, eski (uyuşmayan) bir
@@ -307,7 +318,16 @@ export function renderTextItem(wrap, pageInfo, meta) {
     // "orijinal konumda zemin rengi, taşınmışsa saydam" davranışı sürer.
     content.style.background = rec.fillBg || (moved ? 'transparent' : rec.bg);
     content.style.color = rec.color;
-    content.style.fontSize = `${rec.size * s}px`;
+    content.style.fontSize = `${trueFontPx / ratio}px`;
+    if (ratio < 1) {
+      // transform-origin:top left, positionAt'ın hesapladığı left/top'u
+      // (kutunun ekrandaki gerçek sol-üst köşesini) SABİT tutar — yalnız
+      // sağ-alt yönde büyütülmüş kutuyu görsel olarak geri küçültür.
+      content.style.transform = `scale(${ratio})`;
+      content.style.transformOrigin = 'top left';
+    } else {
+      content.style.transform = '';
+    }
     content.style.fontFamily = (FONTS[rec.font] || FONTS.arial).css;
     content.style.fontWeight = rec.bold ? '700' : '400';
     content.style.fontStyle = rec.italic ? 'italic' : 'normal';

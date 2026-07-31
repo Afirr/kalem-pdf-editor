@@ -7,7 +7,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "dev": "vite --port 5199 --strictPort",
-    "build": "vite build"
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
@@ -15,7 +16,9 @@
   "type": "module",
   "dependencies": {
     "@capacitor/core": "^8.4.2",
+    "@capacitor/filesystem": "^8.1.2",
     "@capacitor/ios": "^8.4.2",
+    "@capacitor/share": "^8.0.1",
     "@pdf-lib/fontkit": "^1.1.1",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.1.200",
