@@ -2,7 +2,7 @@
 // sayfanın katman listesi (metin/görsel öğeler, tıklayınca seçer). Katman
 // listesi kasıtlı olarak yalnızca ekrandaki geçerli sayfayı gösterir — tüm
 // sayfaların katmanlarını aynı anda listelemek karmaşıklaşır.
-import { state, pushUndo } from './state.js';
+import { state, setZOrder } from './state.js';
 
 let workspaceEl = null;
 let thumbEl = null;
@@ -142,7 +142,6 @@ export function refreshLayers() {
     });
 
     row.addEventListener('dragstart', (ev) => {
-      pushUndo();
       dragKey = key;
       ev.dataTransfer.effectAllowed = 'move';
       row.classList.add('dragging');
@@ -184,7 +183,7 @@ function reorderWithinPage(pageIdx, movedKey, targetKey) {
   display.splice(fromIdx, 1);
   const toIdx = display.indexOf(targetKey);
   display.splice(toIdx, 0, movedKey);
-  state.zOrder.set(pageIdx, display.reverse());
+  setZOrder(pageIdx, display.reverse());
 }
 
 // Seçili tek katmanı bir öne/arkaya ya da en öne/arkaya taşır.
@@ -196,11 +195,13 @@ export function moveLayer(key, mode) {
   if (!order) return;
   const i = order.indexOf(key);
   if (i === -1) return;
-  order.splice(i, 1);
-  if (mode === 'front') order.push(key);
-  else if (mode === 'back') order.unshift(key);
-  else if (mode === 'forward') order.splice(Math.min(order.length, i + 1), 0, key);
-  else if (mode === 'backward') order.splice(Math.max(0, i - 1), 0, key);
+  const next = [...order];
+  next.splice(i, 1);
+  if (mode === 'front') next.push(key);
+  else if (mode === 'back') next.unshift(key);
+  else if (mode === 'forward') next.splice(Math.min(next.length, i + 1), 0, key);
+  else if (mode === 'backward') next.splice(Math.max(0, i - 1), 0, key);
+  setZOrder(pageIdx, next);
 }
 
 function labelFor(key, ref) {

@@ -98,6 +98,24 @@ export function editCount() {
   return state.textEdits.size + state.areas.size;
 }
 
+// ---------- Doğrudan mutasyon sarmalayıcıları ----------
+// syncText/syncImage'ın aksine burada "dirty" kontrolü yok — çağıran zaten
+// kaydı silmeye/yeniden sıralamaya karar vermiş. Amaç: pushUndo() çağrısını
+// mutasyonla aynı yerde zorunlu kılıp, unutulan pushUndo()'dan kaynaklı sessiz
+// geri-al kaybını önlemek (bkz. main.js pbRevert, sidebar.js katman sürükleme).
+export function deleteTextEdit(key) {
+  pushUndo();
+  state.textEdits.delete(key);
+}
+export function deleteArea(key) {
+  pushUndo();
+  state.areas.delete(key);
+}
+export function setZOrder(pageIdx, order) {
+  pushUndo();
+  state.zOrder.set(pageIdx, order);
+}
+
 export function resetAll() {
   state.textEdits.clear();
   state.areas.clear();

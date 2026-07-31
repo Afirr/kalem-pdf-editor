@@ -6,7 +6,7 @@ import {
 } from './pdfview.js';
 import {
   state, textKey, imageKey, syncText, syncImage, editCount, resetAll,
-  pushUndo, undo, redo, canUndo, canRedo,
+  pushUndo, undo, redo, canUndo, canRedo, deleteTextEdit, deleteArea,
 } from './state.js';
 import { bake } from './engine/export.js';
 import { initSidebar, loadThumbnails, refreshLayers, moveLayer } from './sidebar.js';
@@ -545,14 +545,13 @@ els.pbDelete.addEventListener('click', () => {
 els.pbRevert.addEventListener('click', () => {
   const key = [...state.selected][0];
   if (!key) return;
-  pushUndo();
   const ref = state.itemRefs.get(key);
   if (ref.kind === 'text') {
     if (state.editingKey === key) { state.editingKey = null; state.editingDraft = null; editSnapshot = null; }
-    state.textEdits.delete(key);
+    deleteTextEdit(key);
     if (pruneIfEmptyCustom(key)) { closePropertyBar(); updateCount(); return; }
   } else {
-    state.areas.delete(key);
+    deleteArea(key);
   }
   refreshItem(key);
   updateCount();
@@ -664,8 +663,7 @@ els.pbMerge.addEventListener('click', mergeSelected);
 function moveSelectedLayer(mode) {
   const key = [...state.selected][0];
   if (!key) return;
-  pushUndo();
-  moveLayer(key, mode);
+  moveLayer(key, mode); // pushUndo() moveLayer içinde (setZOrder üzerinden)
   rerender();
 }
 els.pbBackward.addEventListener('click', () => moveSelectedLayer('backward'));
