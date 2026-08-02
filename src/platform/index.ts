@@ -10,5 +10,15 @@ export interface ExportResult {
   method: 'download' | 'share';
 }
 
+/**
+ * Hangi kod yolundayız: 'web' | 'ios' | 'android'. Gerçek cihazda test ederken
+ * gözle doğrulamak için — ana ekrana eklenmiş PWA'da bu HER ZAMAN 'web' döner,
+ * yani native.ts hiç çalışmaz (Capacitor köprüsü yalnız native WKWebView'de
+ * enjekte edilir).
+ */
+export function platformName(): string {
+  return Capacitor.getPlatform();
+}
+
 export const exportPdf: (bytes: Uint8Array<ArrayBuffer>, suggestedName: string) => Promise<ExportResult> =
   Capacitor.isNativePlatform() ? native.exportPdf : web.exportPdf;

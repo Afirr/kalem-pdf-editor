@@ -341,6 +341,10 @@ export function renderTextItem(wrap, pageInfo, meta) {
     if (editing) {
       content.contentEditable = 'true';
       content.spellcheck = false;
+      // Boşken CSS ::before ile gösterilecek ipucu (bkz. style.css
+      // .titem.edited[contenteditable]:empty::before). Gerçek metin DEĞİL —
+      // textContent boş kalır, dolayısıyla dışa aktarıma sızmaz.
+      content.dataset.placeholder = 'Metninizi buraya girin';
     } else {
       content.addEventListener('pointerdown', (ev) => {
         ev.stopPropagation();

@@ -11,7 +11,7 @@ import {
 import { bake } from './engine/export.js';
 import { initSidebar, loadThumbnails, refreshLayers, moveLayer } from './sidebar.js';
 import { FONTS } from './engine/fonts.js';
-import { exportPdf } from './platform/index.js';
+import { exportPdf, platformName } from './platform/index.js';
 import { initToolbarOverflow } from './toolbarOverflow.js';
 
 const $ = (id) => document.getElementById(id);
@@ -67,6 +67,10 @@ initSidebar({
   },
   onReorder: () => rerender(),
 });
+
+// Gerçek cihazda hangi dışa aktarma yolunun aktif olduğunu gözle görebilmek
+// için: PWA/tarayıcıda 'web', Xcode ile derlenmiş Capacitor uygulamasında 'ios'.
+els.downloadBtn.title = `PDF'i İndir — platform: ${platformName()}`;
 
 initToolbarOverflow({
   toolbar: document.querySelector('.toolbar'),
@@ -276,7 +280,21 @@ function selectKeys(keys) {
 // ---------- Satır içi metin düzenleme ----------
 function placeCaretAt(el, evt) {
   el.focus();
-  if (!evt) return;
+  if (!evt) {
+    // Konum bilgisi yok (ör. "+ Metin" ile yeni açılan boş kutu): imleci
+    // açıkça kutunun içine yerleştir. Yalnız focus() çağırmak boş bir
+    // contentEditable'da bazı tarayıcılarda (özellikle iOS Safari) yanıp sönen
+    // imleci göstermiyor — kullanıcı yazmaya hazır olduğunu anlayamıyor.
+    try {
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false); // içeriğin sonuna
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch { /* imleç yerleşimi kritik değil, focus() zaten yapıldı */ }
+    return;
+  }
   let range = null;
   try {
     if (document.caretPositionFromPoint) {
@@ -417,11 +435,45 @@ function pruneIfEmptyCustom(key) {
 // "her dokunuşta ekran kayıyor" hissi veriyordu ve düzenlenen metin görüş
 // alanından çıkabiliyordu.
 const mobileLayout = window.matchMedia('(max-width: 720px)');
+// .propertybar'ın top'u CSS'te --toolbar-h ile bağlıdır; toolbar yüksekliğini
+// değiştiren HER kural (@media + safe-area) --toolbar-h üzerinden geçmeli,
+// aksi hâlde buradaki hesap sessizce kayar (yatayda yaşanan 10px hatası buydu).
 function syncWorkspaceClearance() {
-  const clearance = (els.propertyBar.hidden || mobileLayout.matches) ? 0 : els.propertyBar.offsetHeight;
-  els.mainRow.style.marginTop = `${clearance}px`;
+  const h = els.propertyBar.hidden ? 0 : els.propertyBar.offsetHeight;
+  // Masaüstü: çubuk üstte yüzer, içeriği margin ile aşağı iter.
+  els.mainRow.style.marginTop = `${mobileLayout.matches ? 0 : h}px`;
+  // Mobil: çubuk alta yapışır ve içeriği İTMEZ; yüksekliği .pages'in kaydırma
+  // tamponu olarak CSS'e geçer — eski 120px sabiti çubuk sarınca yetmiyordu.
+  document.documentElement.style.setProperty('--pb-h', `${mobileLayout.matches ? h : 0}px`);
 }
 mobileLayout.addEventListener?.('change', syncWorkspaceClearance);
+// Çubuk açıkken satır sarma sayısı değişirse --pb-h bayatlamasın.
+if (typeof ResizeObserver !== 'undefined') {
+  new ResizeObserver(syncWorkspaceClearance).observe(els.propertyBar);
+}
+// Genişliği hep >720px kalan bir cihaz döndürüldüğünde toolbar 52->42 iner;
+// mobileLayout 'change' bunu yakalamaz.
+window.addEventListener('orientationchange', syncWorkspaceClearance);
+window.addEventListener('resize', syncWorkspaceClearance);
+
+// iOS'ta ekran klavyesi açılınca layout viewport KÜÇÜLMEZ; alta yapışan
+// .propertybar klavyenin arkasında kalır ve kullanıcı tam yazarken
+// punto/renk/font/Kapat kontrollerine erişemez. visualViewport ile çubuğu
+// klavyenin üstüne taşıyoruz (CSS: .propertybar transform, --kb).
+const vv = window.visualViewport;
+if (vv) {
+  const syncKeyboardInset = () => {
+    const gap = window.innerHeight - (vv.height + vv.offsetTop);
+    // <=120px farklar Safari'nin adres/araç çubuğu daralmasıdır, klavye değil —
+    // eşik olmadan çubuk normal kaydırmada sahte sıçrama yapar.
+    document.documentElement.style.setProperty('--kb', gap > 120 ? `${Math.round(gap)}px` : '0px');
+  };
+  vv.addEventListener('resize', syncKeyboardInset);
+  vv.addEventListener('scroll', syncKeyboardInset);
+  // Odak çıkışında klavye kapanır ama resize gecikebilir; çubuk yerine dönsün.
+  window.addEventListener('focusout', () => setTimeout(syncKeyboardInset, 60));
+  syncKeyboardInset();
+}
 
 // Katman/görsel araçları (sıra + küçült/büyüt/gizle) soldaki katman panelinde
 // yaşar; iki satırdan en az biri görünürse kapsayıcı da görünür.

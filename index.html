@@ -7,7 +7,21 @@
        yakınlaştırmasını, viewport'u kısıtlayarak değil, tüm odaklanabilir
        alanların (özellik çubuğu + canvas'taki düzenlenen metin, bkz.
        pdfview.js renderTextItem) font-size'ını >=16px tutarak önlüyoruz. -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+  <!-- "Ana Ekrana Ekle" kısayolunun tarayıcı kabuğu OLMADAN (standalone)
+       açılması için gereken tek zorunlu meta. Bu olmadan ikon yalnızca bir yer
+       imidir; safe-area davranışı test edilemez. viewport-fit=cover ile
+       BİRLİKTE gitmeli: cover olmadan env(safe-area-inset-*) daima 0 döner,
+       cover'ı env() dolguları olmadan eklemek ise alt çubuğu home
+       indicator'ın altına kaydırır. -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <!-- 'default' BİLİNÇLİ: 'black-translucent' içeriği durum çubuğunun ALTINA
+       taşıyıp üstte yeni bir regresyon açar. -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Kalem" />
+  <meta name="theme-color" content="#22252d" />
   <title>Kalem — PDF Metin Düzenleyici</title>
   <link rel="stylesheet" href="/src/style.css" />
 </head>

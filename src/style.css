@@ -28,6 +28,25 @@
   --muted: #7a7d87;
   --ui: -apple-system, "SF Pro Text", "Segoe UI", Roboto, Arial, sans-serif;
   --serif: "Iowan Old Style", Georgia, "Times New Roman", serif;
+
+  /* Güvenli alan (çentik / Dynamic Island / home indicator). YALNIZCA
+     index.html'de viewport-fit=cover varken sıfırdan farklı döner; masaüstünde,
+     Android sekmesinde ve normal Safari sekmesinde 0'dır — yani aşağıdaki
+     hiçbir calc()/max() masaüstü davranışını değiştirmez. */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+
+  /* Toolbar yüksekliği TEK KAYNAK: üç yerde (toolbar height, toolbar-overflow
+     top, propertybar top) elle kopyalanmıştı ve yatay breakpoint'te 42px'e
+     inince .propertybar top:52px'te kalıp 10px'lik hizalama hatası veriyordu. */
+  --toolbar-h: calc(52px + var(--safe-t));
+  /* Mobilde alta yapışan özellik çubuğunun ÖLÇÜLEN yüksekliği
+     (main.js -> syncWorkspaceClearance yazar). */
+  --pb-h: 0px;
+  /* Ekran klavyesinin kapladığı yükseklik (main.js -> syncKeyboardInset yazar). */
+  --kb: 0px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -47,8 +66,9 @@ body {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 0 16px;
-  height: 52px;
+  /* Üst dolgu = çentik/durum çubuğu bandı; yan dolgular = yatayda çentik. */
+  padding: var(--safe-t) max(16px, var(--safe-r)) 0 max(16px, var(--safe-l));
+  height: var(--toolbar-h); /* --toolbar-h zaten --safe-t'yi içerir */
   background: var(--ink);
   color: #e8e7e3;
   flex-shrink: 0;
@@ -56,8 +76,10 @@ body {
 }
 .toolbar-overflow {
   position: absolute;
-  top: 52px;
-  right: 8px;
+  /* .toolbar position:relative olduğundan %100 = toolbar'ın alt kenarı:
+     toolbar yüksekliği hangi kuralla değişirse değişsin panel senkron kalır. */
+  top: 100%;
+  right: max(8px, var(--safe-r));
   background: var(--ink);
   border: 1px solid var(--ink-soft);
   border-radius: 8px;
@@ -143,7 +165,7 @@ body {
    gizli kalmasını hem de anlık sıçrayıp "titriyor" gibi görünmesini önler. */
 .propertybar {
   position: fixed;
-  top: 52px;
+  top: var(--toolbar-h);
   left: 0;
   right: 0;
   z-index: 40;
@@ -462,6 +484,19 @@ body {
    miras alınırsa contentEditable'da imleç/yazma çalışmaz — burada geri açılır. */
 .titem.edited[contenteditable="true"] { cursor: text; outline: none; user-select: text; }
 
+/* Boş düzenleme kutusu: içerik yokken width:max-content kutuyu neredeyse sıfır
+   genişliğe indiriyordu — "+ Metin" ile eklenen yeni kutu ekranda görünmüyor,
+   kullanıcı nereye yazacağını anlayamıyordu. Placeholder'ı GERÇEK metin yerine
+   ::before ile veriyoruz: textContent boş kalır, böylece kullanıcı hiçbir şey
+   yazmadan çıkarsa pruneIfEmptyCustom kutuyu temizleyebilir ve dışa aktarımda
+   placeholder metni asla PDF'e gömülmez. */
+.titem.edited[contenteditable="true"]:empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
 /* Orijinal konumdaki kapatma alanı (metin/görsel taşındığında/silindiğinde) — burada artık
    hiçbir şey yok (zemin rengiyle kapatıldı), bu yüzden kesikli çerçeve BİLEREK yok: aksi
    hâlde taşınan öğenin eski yerinde "hayalet kutu" izi kalıyormuş gibi görünüyordu. */
@@ -621,7 +656,7 @@ body {
 /* ---------- İpucu & sürükleme ---------- */
 .hint {
   position: fixed;
-  bottom: 18px;
+  bottom: calc(18px + var(--safe-b));
   left: 50%;
   transform: translateX(-50%);
   background: var(--ink);
@@ -651,7 +686,8 @@ body {
 .hint button:hover { color: #fff; background: var(--ink-soft); }
 .drag-veil {
   position: fixed;
-  inset: 10px;
+  inset: calc(10px + var(--safe-t)) calc(10px + var(--safe-r))
+         calc(10px + var(--safe-b)) calc(10px + var(--safe-l));
   z-index: 100;
   border: 2.5px dashed var(--red);
   border-radius: 18px;
@@ -668,8 +704,14 @@ body {
 /* ---------- Mobil (dar ekran) ---------- */
 @media (max-width: 720px) {
   .filename { display: none; }
-  /* Üst çubuk taşarsa yatay kaydırılabilsin, düğmeler ekrandan düşmesin */
-  .toolbar { gap: 8px; padding: 0 8px; overflow-x: auto; }
+  /* Üst çubuk taşarsa yatay kaydırılabilsin, düğmeler ekrandan düşmesin.
+     DİKKAT: padding kısayolu taban kuraldaki safe-area dolgusunu EZER —
+     burada yeniden yazılmazsa telefonda hiç uygulanmaz. */
+  .toolbar {
+    gap: 8px;
+    padding: var(--safe-t) max(8px, var(--safe-r)) 0 max(8px, var(--safe-l));
+    overflow-x: auto;
+  }
   .toolbar-group { flex-shrink: 0; }
   .brand { font-size: 18px; }
 
@@ -682,7 +724,14 @@ body {
     border-bottom: none;
     border-top: 1px solid #d8d4c8;
     box-shadow: 0 -6px 14px rgba(30, 28, 22, 0.1);
-    padding: 6px 10px;
+    /* Alt dolgu = home indicator bandı; yan dolgular = yatayda çentik. */
+    padding: 6px max(10px, var(--safe-r)) calc(6px + var(--safe-b)) max(10px, var(--safe-l));
+    /* iOS'ta klavye açılınca layout viewport KÜÇÜLMEZ: alta yapışan çubuk
+       klavyenin arkasında kalır ve kullanıcı tam yazarken punto/renk/Kapat
+       kontrollerine erişemez. --kb'yi main.js visualViewport'tan yazar;
+       0 iken bu dönüşüm etkisizdir. */
+    transform: translateY(calc(-1 * var(--kb, 0px)));
+    transition: transform 0.12s ease-out;
   }
   .propertybar .pb-row { flex-wrap: wrap; gap: 6px; }
   .pb-row + .pb-row { margin-top: 5px; }
@@ -699,7 +748,18 @@ body {
   .layer-tools { padding: 2px 5px 6px; }
   .lt-label { width: 100%; }
 
-  .pages { padding: 16px 8px 120px; gap: 16px; }
+  /* 120px sabiti çubuğun GERÇEK yüksekliğini takip etmiyordu (özellik çubuğu
+     sarınca 126-148px'e çıkıyor) — sayfanın son satırı çubuğun arkasında
+     kalabiliyordu. Artık ölçülen yüksekliğe bağlı. max() KULLANILIYOR çünkü
+     --pb-h çubuğun kendi env() dolgusunu ZATEN içeriyor; --safe-b'yi ayrıca
+     TOPLAMAK home indicator bandını iki kez sayardı. 48px taban, çubuk
+     kapalıyken mevcut alt nefes payını korur. */
+  .pages {
+    gap: 16px;
+    padding: 16px max(8px, var(--safe-r))
+             calc(16px + max(var(--pb-h), var(--safe-b), 48px))
+             max(8px, var(--safe-l));
+  }
   .hint { display: none; }
 }
 
@@ -709,7 +769,7 @@ body {
 @media (min-width: 721px) and (max-width: 1024px) {
   .sidebar { width: 150px; }
   .thumb-strip { flex-basis: 48%; }
-  .toolbar { gap: 10px; padding: 0 12px; }
+  .toolbar { gap: 10px; padding: var(--safe-t) max(12px, var(--safe-r)) 0 max(12px, var(--safe-l)); }
 }
 
 /* ---------- Yatay telefon (kısa yükseklik) ---------- */
@@ -718,9 +778,29 @@ body {
    bu blok genişlik kuralına bağımlı olmadan kendi başına tam bir kompakt-mod
    tanımlıyor; dikey alan darlığı yatay genişlikten daha acil. */
 @media (max-height: 480px) and (orientation: landscape) {
-  .toolbar { height: 42px; gap: 6px; padding: 0 8px; }
-  .sidebar { width: 140px; }
+  /* Yükseklik artık .toolbar'da DEĞİL, değişkende: .propertybar'ın top'u ve
+     .toolbar-overflow'un konumu otomatik olarak senkron iner. Bu satır,
+     yatayda canlıda olan 10px'lik hizalama hatasını kapatıyor (toolbar 42px'e
+     iniyordu ama .propertybar top:52px'te kalıyordu). */
+  :root { --toolbar-h: calc(42px + var(--safe-t)); }
+  .toolbar { gap: 6px; padding: var(--safe-t) max(8px, var(--safe-r)) 0 max(8px, var(--safe-l)); }
+  /* Yatayda çentik SOLDA/SAĞDA olur: sol panel ve sayfa alanı içerlenmeli. */
+  .sidebar { width: calc(140px + var(--safe-l)); padding-left: var(--safe-l); }
+  .pages { padding-left: max(20px, var(--safe-l)); padding-right: max(20px, var(--safe-r)); }
   .thumb-strip { flex-basis: 35%; }
-  .propertybar { padding: 4px 10px; }
+  /* Kısayol yerine longhand: dar-yatayda mobil bloğun verdiği alt güvenli-alan
+     dolgusunu silmesin. */
+  .propertybar {
+    padding-top: 4px;
+    padding-bottom: 4px;
+    padding-left: max(10px, var(--safe-l));
+    padding-right: max(10px, var(--safe-r));
+  }
   .propertybar .pb-row { flex-wrap: nowrap; overflow-x: auto; }
+}
+
+/* Dar + yatay (ör. iPhone SE landscape): çubuk alta yapışır, alt güvenli-alan
+   dolgusu geri gelmeli — yukarıdaki longhand onu sıfırlamıştı. */
+@media (max-height: 480px) and (orientation: landscape) and (max-width: 720px) {
+  .propertybar { padding-bottom: calc(4px + var(--safe-b)); }
 }
