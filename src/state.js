@@ -25,7 +25,8 @@ export const state = {
 
   // Katman (yığılma/z) sırası: sayfa indeksi -> anahtar[] (alttan üste).
   // Katman panelinden sürükleyerek yeniden sıralanabilir; boşsa renderPage
-  // doğal algılama sırasını kullanıp burayı doldurur.
+  // doğal algılama sırasını (görsel/logo -> metin, metin her zaman üstte)
+  // kullanıp burayı doldurur.
   zOrder: new Map(),
 
   // Son çizimde her anahtarın hangi sayfa/kutuya ait olduğunu tutar (main.js sürükleme,

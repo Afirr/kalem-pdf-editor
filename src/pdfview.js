@@ -148,7 +148,15 @@ async function renderPage(num, container, doc) {
   // Katman (z) sırasını al; yoksa doğal algılama sırasıyla oluştur. Önceki
   // sırada olup artık var olmayan anahtarlar düşer, yeni beliren anahtarlar
   // (ör. yeni eklenen metin/birleştirilen görsel) en üste eklenir.
-  const naturalOrder = [...textMetas.keys(), ...imageMetas.keys()];
+  //
+  // zOrder ALTTAN ÜSTE tutulur (dizide SONRA gelen anahtar DOM'a SONRA
+  // eklenir, style.css'te bu öğelerin hiçbirinde z-index olmadığı için boyama
+  // sırası = DOM sırası). Görseller ÖNCE, metin SONRA: metin her zaman
+  // görselin/logonun üstünde kalsın — otomatik algılanan bir görsel bölgesi
+  // bir metin satırının üstüne binerse (ör. arka plan deseni) tıklamayı
+  // metinden çalmasın. Sırayı text-önce yapmak tam tersi bir regresyona yol
+  // açıyordu (görsel her zaman metnin üstünde çiziliyordu).
+  const naturalOrder = [...imageMetas.keys(), ...textMetas.keys()];
   let order = state.zOrder.get(pageIdx);
   if (!order) {
     order = naturalOrder;
@@ -422,6 +430,33 @@ export function refreshImageItem(key) {
   renderImageItem(ref.wrap, ref.pageInfo, ref.meta);
 }
 
+// refreshTextItem/refreshImageItem eski düğümleri silip yeniden ekliyor
+// (appendChild ile hep wrap'in SONUNA, yani ekranda EN ÜSTE). Bu, seçim/
+// sürükleme/yeniden boyutlandırma gibi refreshItem'ı çağıran HER işlemde
+// öğeyi state.zOrder'dan bağımsız olarak öne fırlatıyordu — büyük bir arka
+// plan öğesine bir kez dokunmak onu kalıcı olarak en üste taşıyabiliyordu.
+// Yeniden çizimden sonra düğümleri zOrder'daki gerçek konumuna geri koyar:
+// zOrder'da bu anahtarın ÜSTÜNDE kalan ilk anahtarın DOM'daki ilk düğümünü
+// bulup, bu anahtara ait TÜM düğümleri (cover+content, ya da tek hit div'i)
+// onun önüne taşır. Seçim tutamaçları (.rhandle) ve sil düğmesi (.kill-btn)
+// kendi z-index'leriyle zaten hep en üstte kaldığı için taşınıp taşınmamaları
+// görsel sonucu etkilemez.
+function restoreZPosition(wrap, pageIdx, key) {
+  const order = state.zOrder.get(pageIdx);
+  if (!order) return;
+  const i = order.indexOf(key);
+  if (i === -1) return; // henüz zOrder'da yok (ör. az önce birleştirilmiş özel alan) — en üstte kalması zararsız
+  let anchor = null;
+  for (let j = i + 1; j < order.length; j++) {
+    const el = wrap.querySelector(`[data-key="${CSS.escape(order[j])}"]`);
+    if (el) { anchor = el; break; }
+  }
+  if (!anchor) return; // üstünde DOM'da hâlâ duran bir şey yok: sonda kalması zaten doğru
+  for (const el of wrap.querySelectorAll(`[data-key="${CSS.escape(key)}"]`)) {
+    wrap.insertBefore(el, anchor);
+  }
+}
+
 // Tür ayrımı gözetmeden doğru yeniden çizimi tetikler (seçim/sürükleme/boyutlandırma
 // gibi tüm main.js akışlarının tek giriş noktası).
 export function refreshItem(key) {
@@ -429,6 +464,7 @@ export function refreshItem(key) {
   if (!ref) return;
   if (ref.kind === 'text') refreshTextItem(key);
   else refreshImageItem(key);
+  restoreZPosition(ref.wrap, ref.pageInfo.page, key);
 }
 
 // ---------- Geometri & renk yardımcıları ----------
