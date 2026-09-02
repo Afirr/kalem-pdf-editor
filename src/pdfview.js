@@ -318,14 +318,13 @@ export function renderTextItem(wrap, pageInfo, meta) {
 
     positionAt(content, left, topPdf, meta.w / ratio, (rec.size * 1.16) / ratio, s);
     content.style.paddingBottom = `${(rec.size * 0.18 * s) / ratio}px`;
-    // Zemin rengi yalnızca metin hâlâ ORİJİNAL konumundaysa (altındaki cover
-    // ile aynı yerde) uygulanır — dışa aktarımda da yalnız orijinal konum
-    // kapatılır. Metin taşınmışsa arka planı boyamak, eski (uyuşmayan) bir
-    // renk yamasının metinle birlikte sürüklenmiş gibi görünmesine yol açar.
-    const moved = Math.abs(rec.dx) > 0.02 || Math.abs(rec.dy) > 0.02;
-    // Kullanıcının seçtiği dolgu rengi (vurgu) her durumda kazanır; yoksa eski
-    // "orijinal konumda zemin rengi, taşınmışsa saydam" davranışı sürer.
-    content.style.background = rec.fillBg || (moved ? 'transparent' : rec.bg);
+    // Zemin rengi KASITLI olarak yalnız kullanıcının seçtiği dolgu/vurgu
+    // rengiyle (rec.fillBg) geliyor — boyut/konum ne olursa olsun metin
+    // varsayılan olarak DAİMA şeffaf. `.tcover` zaten orijinal konumdaki
+    // eski glifleri örtüyor; metnin kendi kutusuna otomatik-örneklenen
+    // rec.bg'yi arka plan yapmak (eski davranış), gerçek sayfa zemini düz
+    // olmayan/dokulu olduğunda uyuşmayan bir kutu gibi görünüyordu.
+    content.style.background = rec.fillBg || 'transparent';
     content.style.color = rec.color;
     content.style.fontSize = `${trueFontPx / ratio}px`;
     if (ratio < 1) {

@@ -53,19 +53,6 @@ export async function bake(bytes, textEdits, areas) {
     const x = rec.meta.x + rec.dx;
     const yBase = rec.meta.yBase + rec.dy;
     const color = hexToRgb(rec.color);
-    // Metin TAŞINMADIYSA (dx/dy ~0): yukarıdaki kapatma dikdörtgeni yalnız
-    // ORİJİNAL küçük punto alanını örtüyor — punto büyütüldüğünde (rec.size >
-    // meta.fs) yeni harfler o alanın DIŞINA, ascender'larla yukarı taşıyor.
-    // page.drawText() kendi arka planını çizmez (yalnız glif konturu), yani
-    // o taşan kısım sayfada zaten duran her ne varsa (ör. hemen üstteki başka
-    // bir metin satırı) onun üstüne ÇIPLAK olarak biner — canlı önizlemede
-    // (pdfview.js .titem.edited, kendi opak arka planıyla) GÖRÜNMEYEN bu
-    // hata yalnız dışa aktarılan PDF'te ortaya çıkıyordu. Düzeltme: DOM'daki
-    // `content.style.background = rec.fillBg || (moved ? 'transparent' : rec.bg)`
-    // ile BİREBİR aynı kuralı burada da uygula — taşınmışsa arka plan YOK
-    // (eski, uyuşmayan bir renk yamasının metinle sürüklenmiş gibi görünmesini
-    // önceki gibi önlemeye devam eder).
-    const moved = Math.abs(rec.dx) > 0.02 || Math.abs(rec.dy) > 0.02;
     // İtalik: ayrı italik TTF taşımak yerine harf eğimiyle (shear) benzetilir —
     // tarayıcı önizlemesindeki sentetik italikle aynı yaklaşım. PDF metin
     // matrisinde harfleri sağa yatıran bileşen ySkew'dur (xSkew satır TABANINI
@@ -76,14 +63,17 @@ export async function bake(bytes, textEdits, areas) {
       if (!line) return;
       const y = yBase - i * lineH;
       const w = font.widthOfTextAtSize(line, size);
-      // Sıra önemli: önce rec.size'a göre GÜNCEL boyuttaki arka plan (varsa
-      // fillBg vurgusu, yoksa taşınmamışken sayfa zeminiyle aynı rec.bg),
-      // SONRA metin — aksi hâlde metin kendi arka planının altında kalır.
-      const bgColor = rec.fillBg || (moved ? null : rec.bg);
-      if (bgColor) {
+      // Zemin rengi KASITLI olarak yalnız kullanıcının seçtiği dolgu/vurgu
+      // rengiyle (rec.fillBg) geliyor — pdfview.js'teki .titem.edited ile
+      // aynı kural: metin, boyut/konum ne olursa olsun varsayılan olarak
+      // DAİMA şeffaf. Yukarıdaki (satır 37-45) kapatma dikdörtgeni zaten
+      // ORİJİNAL glifleri örtüyor; büyütülmüş metnin kendi otomatik-
+      // örneklenen rec.bg rengiyle ek bir kutu alması, gerçek sayfa zemini
+      // düz olmayan/dokulu olduğunda uyuşmayan bir yama gibi görünüyordu.
+      if (rec.fillBg) {
         page.drawRectangle({
           x: x - 1.5, y: y - size * 0.26, width: w + 3, height: size * 1.32,
-          color: hexToRgb(bgColor),
+          color: hexToRgb(rec.fillBg),
         });
       }
       page.drawText(line, { x, y, size, font, color, ySkew: skew });
