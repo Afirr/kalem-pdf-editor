@@ -6,6 +6,12 @@
       "runtimeExecutable": "C:\\Users\\Administrator\\Documents\\pdf-editor\\.claude\\dev-with-path.cmd",
       "runtimeArgs": [],
       "port": 5199
+    },
+    {
+      "name": "kalem-prod-dist",
+      "runtimeExecutable": "C:\\Users\\Administrator\\Documents\\pdf-editor\\.claude\\serve-prod-dist.cmd",
+      "runtimeArgs": [],
+      "port": 5199
     }
   ]
 }
