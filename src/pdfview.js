@@ -6,6 +6,7 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { state, textKey, imageKey } from './state.js';
 import { FONTS, detectFontKey, prettyFontName } from './engine/fonts.js';
 import { detectImageRegions } from './engine/regions.js';
+import { computeBackgroundMask } from './engine/silhouette.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -481,19 +482,52 @@ export function screenRectToPdf(pageInfo, leftPx, topPx, wPx, hPx) {
 }
 
 // Sayfanın render edilmiş tuvalinden bir bölgeyi PNG olarak kırpar
-export async function cropToPng(pageInfo, leftPx, topPx, wPx, hPx) {
+// opts.silhouette === true ise (yalnız otomatik-algılanan tekil görsellerin
+// ilk "populate" adımında kullanılır — bkz. main.js populateImageAssets),
+// köşe-tabanlı flood-fill (bkz. engine/silhouette.js) ile bulunan arka plan
+// piksellerinin alfasını 0 yapar. PDF'in clip/SMask/image-mask hangi
+// TEKNİKLE kırptığı hiç bilinmez — yalnız pdf.js'in ZATEN doğru render
+// ettiği piksele bakılır. mergeSelected() bilerek silüetsiz (dikdörtgen)
+// bırakılıyor — birleştirilen öğelerin köşeleri farklı arka planlara ait
+// olabilir, bu da computeBackgroundMask'in "corners-disagree" güvenlik
+// kapısını sık tetikler ya da daha kötüsü tesadüfen yanlış bir bölgeyi oyar.
+export async function cropToPng(pageInfo, leftPx, topPx, wPx, hPx, opts = {}) {
   const dpr = pageInfo.dpr;
   const off = document.createElement('canvas');
   off.width = Math.max(1, Math.round(wPx * dpr));
   off.height = Math.max(1, Math.round(hPx * dpr));
-  off.getContext('2d').drawImage(
+  const ctx = off.getContext('2d', opts.silhouette ? { willReadFrequently: true } : undefined);
+  ctx.drawImage(
     pageInfo.canvas,
     leftPx * dpr, topPx * dpr, wPx * dpr, hPx * dpr,
     0, 0, off.width, off.height,
   );
+
+  let silhouette = null;
+  if (opts.silhouette) {
+    const imgData = ctx.getImageData(0, 0, off.width, off.height);
+    const result = computeBackgroundMask(imgData.data, off.width, off.height, opts.silhouetteOptions);
+    silhouette = {
+      applied: result.applied,
+      backgroundRatio: result.backgroundRatio,
+      reason: result.reason,
+      bgColor: result.refColor
+        ? hex(Math.round(result.refColor.r), Math.round(result.refColor.g), Math.round(result.refColor.b))
+        : null,
+    };
+    if (result.applied) {
+      const data = imgData.data;
+      const mask = result.mask;
+      for (let i = 0, p = 3; i < mask.length; i++, p += 4) {
+        if (mask[i]) data[p] = 0; // yalnız alfa kanalı; RGB'ye dokunmuyoruz (şeffaf pikselin rengi hiçbir yerde görünmez)
+      }
+      ctx.putImageData(imgData, 0, 0);
+    }
+  }
+
   const blob = await new Promise((res) => off.toBlob(res, 'image/png'));
   const bytes = new Uint8Array(await blob.arrayBuffer());
-  return { bytes, w: off.width, h: off.height, blob };
+  return { bytes, w: off.width, h: off.height, blob, silhouette };
 }
 
 function hex(r, g, b) {

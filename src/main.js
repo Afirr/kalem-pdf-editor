@@ -225,9 +225,16 @@ async function populateImageAssets(key, rec, ref) {
   const t = (ref.pageInfo.pdfH - rec.meta.y - rec.meta.h) * s;
   const w = rec.meta.w * s;
   const h = rec.meta.h * s;
-  const { bytes } = await cropToPng(ref.pageInfo, l, t, w, h);
+  const { bytes, silhouette } = await cropToPng(ref.pageInfo, l, t, w, h, { silhouette: true });
   rec.png = bytes;
-  rec.bg = sampleBgAround(ref.pageInfo, l, t, w, h);
+  // Silüet maskesi uygulandıysa (PNG'nin köşeleri artık şeffaf), .acover'ın
+  // zemin rengini AYNI flood-fill'in bulduğu köşe rengiyle besliyoruz —
+  // aksi hâlde sampleBgAround()'ın kutunun 5px DIŞINDAN bağımsız örneklediği
+  // renk, flood-fill'in kutunun İÇİNDEN bulduğu renkten hafifçe farklı
+  // çıkarsa, şeffaf köşenin açığa çıkardığı .acover rengiyle komşu piksel
+  // arasında ince bir "dikiş" görünür. Maskeleme uygulanmadıysa davranış
+  // TAMAMEN eskisi gibi kalır (sampleBgAround'a geri düşer).
+  rec.bg = (silhouette?.applied && silhouette.bgColor) || sampleBgAround(ref.pageInfo, l, t, w, h);
   rec.url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
   if (state.itemRefs.has(key)) refreshItem(key);
 }
@@ -701,7 +708,13 @@ async function mergeSelected() {
 
   pushUndo();
 
-  const { bytes } = await cropToPng(pageInfo, rect.left, rect.top, rect.width, rect.height);
+  // silhouette: false (bilinçli) — burada birleştirilen öğelerin köşeleri
+  // birbirinden FARKLI arka planlara ait olabilir (computeBackgroundMask'in
+  // "corners-disagree" güvenlik kapısını sık tetikler), üstelik bu araç
+  // zaten "algılama hatalı kaldığında kullanıcının elle düzelttiği kaçış
+  // yolu" — onu aynı belirsizlik kaynağıyla bir kez daha belirsizleştirmemek
+  // için dikdörtgen bırakılıyor.
+  const { bytes } = await cropToPng(pageInfo, rect.left, rect.top, rect.width, rect.height, { silhouette: false });
   const bg = sampleBgAround(pageInfo, rect.left, rect.top, rect.width, rect.height);
   const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
 
