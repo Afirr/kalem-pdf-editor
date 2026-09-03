@@ -73,6 +73,17 @@
       <button class="opt-btn" id="pbFillClear" title="Dolguyu kaldır">⊘</button>
       <select id="pbFont" title="Yazı tipi"></select>
       <span class="pb-hint" id="pbFontRaw" title="PDF'teki özgün font"></span>
+      <button class="opt-btn" id="pbAiEdit" title="Yapay zekayla düzenle">✦</button>
+    </div>
+    <div class="pb-row" id="pbAiRow" hidden>
+      <label class="field ai-edit-field" title="Yapay zekaya ne yapmasını istediğini yaz">
+        <span>AI</span>
+        <input type="text" id="pbAiInstruction" placeholder="Örn: Daha resmi bir dille yeniden yaz" maxlength="500" />
+      </label>
+      <span class="pb-hint" id="pbAiStatus"></span>
+      <span class="spacer"></span>
+      <button class="ghost-btn" id="pbAiCancel">İptal</button>
+      <button class="apply-btn" id="pbAiApply">Uygula</button>
     </div>
     <div class="pb-row" id="pbMultiRow" hidden>
       <span class="pb-label" id="pbMultiLabel">2 öğe seçili</span>

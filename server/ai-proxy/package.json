@@ -1,0 +1,14 @@
+{
+  "name": "kalem-ai-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Kalem 'AI ile Düzenle' özelliği için NVIDIA API anahtarını istemciden gizleyen minimal vekil sunucu.",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node --env-file=.env index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

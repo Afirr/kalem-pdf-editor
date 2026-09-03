@@ -217,6 +217,19 @@ body {
   background: var(--page);
   cursor: pointer;
 }
+.ai-edit-field { flex: 1; min-width: 200px; }
+.ai-edit-field input[type="text"] {
+  flex: 1;
+  height: 32px;
+  border: 1px solid #ddd9cf;
+  border-radius: 7px;
+  padding: 0 9px;
+  font-size: 16px; /* iOS Safari odaklanmada zorla zoom eşiği */
+  font-family: var(--ui);
+  background: var(--page);
+}
+#pbAiEdit.busy { opacity: 0.5; pointer-events: none; }
+#pbAiStatus.error { color: var(--red); }
 .opt-btn {
   width: 32px;
   height: 32px;

@@ -32,6 +32,8 @@ const els = {
   pbTextRow: $('pbTextRow'), pbSize: $('pbSize'), pbColor: $('pbColor'), pbBold: $('pbBold'), pbFont: $('pbFont'),
   pbItalic: $('pbItalic'), pbUnderline: $('pbUnderline'), pbStrike: $('pbStrike'),
   pbFillBg: $('pbFillBg'), pbFillClear: $('pbFillClear'), pbFontRaw: $('pbFontRaw'),
+  pbAiEdit: $('pbAiEdit'), pbAiRow: $('pbAiRow'), pbAiInstruction: $('pbAiInstruction'),
+  pbAiStatus: $('pbAiStatus'), pbAiCancel: $('pbAiCancel'), pbAiApply: $('pbAiApply'),
   pbAreaRow: $('pbAreaRow'), pbShrink: $('pbShrink'), pbGrow: $('pbGrow'), pbToggleHide: $('pbToggleHide'),
   pbMultiRow: $('pbMultiRow'), pbMultiLabel: $('pbMultiLabel'), pbMerge: $('pbMerge'),
   pbOrderRow: $('pbOrderRow'), pbBackward: $('pbBackward'), pbForward: $('pbForward'),
@@ -524,6 +526,7 @@ function openPropertyBarForSelection() {
   if (sel.length > 1) {
     activeTextDraft = null;
     els.pbTextRow.hidden = true;
+    closeAiEditRow();
     els.pbAreaRow.hidden = true;
     els.pbOrderRow.hidden = true;
     els.pbMultiRow.hidden = false;
@@ -545,6 +548,7 @@ function openPropertyBarForSelection() {
   if (ref.kind === 'text') {
     els.pbAreaRow.hidden = true;
     els.pbTextRow.hidden = false;
+    closeAiEditRow();
     const rec = (state.editingKey === key && state.editingDraft) ? state.editingDraft : getOrCreateTextRecord(key);
     activeTextDraft = { key, rec };
     els.pbSize.value = round1(rec.size);
@@ -563,6 +567,7 @@ function openPropertyBarForSelection() {
   } else {
     activeTextDraft = null;
     els.pbTextRow.hidden = true;
+    closeAiEditRow();
     els.pbAreaRow.hidden = false;
     const rec = state.areas.get(key);
     els.pbToggleHide.textContent = rec?.hidden ? 'Göster' : 'Gizle';
@@ -578,6 +583,7 @@ function closePropertyBar() {
   activeTextDraft = null;
   els.pbAreaRow.hidden = true;
   els.pbOrderRow.hidden = true;
+  closeAiEditRow();
   syncLayerTools();
   syncWorkspaceClearance();
 }
@@ -617,6 +623,83 @@ els.pbUnderline.addEventListener('click', () => { els.pbUnderline.classList.togg
 els.pbStrike.addEventListener('click', () => { els.pbStrike.classList.toggle('on'); onTextStyleChange(); });
 els.pbFillBg.addEventListener('input', () => { els.pbFillClear.classList.remove('on'); onTextStyleChange(); });
 els.pbFillClear.addEventListener('click', () => { els.pbFillClear.classList.add('on'); onTextStyleChange(); });
+
+// "AI ile Düzenle": seçili metni NVIDIA destekli bir vekil sunucuya (bkz.
+// server/ai-proxy) gönderip kullanıcının verdiği talimata göre yeniden
+// yazdırır. Bu servis çalışmıyorsa/dağıtılmadıysa istek başarısız olur ama
+// Kalem'in geri kalanı — %100 istemci taraflı akış — bundan etkilenmez.
+const AI_PROXY_BASE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+  ? 'http://localhost:8787'
+  : '';
+
+function setAiStatus(text, isError = false) {
+  els.pbAiStatus.textContent = text;
+  els.pbAiStatus.classList.toggle('error', isError);
+}
+
+function closeAiEditRow() {
+  els.pbAiRow.hidden = true;
+  els.pbAiInstruction.value = '';
+  setAiStatus('');
+  els.pbAiEdit.classList.remove('busy');
+}
+
+els.pbAiEdit.addEventListener('click', () => {
+  if (!activeTextDraft) return;
+  const opening = els.pbAiRow.hidden;
+  closeAiEditRow();
+  if (opening) {
+    els.pbAiRow.hidden = false;
+    els.pbAiInstruction.focus();
+  }
+});
+els.pbAiCancel.addEventListener('click', closeAiEditRow);
+els.pbAiInstruction.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); requestAiEdit(); }
+  else if (e.key === 'Escape') { e.preventDefault(); closeAiEditRow(); }
+});
+els.pbAiApply.addEventListener('click', requestAiEdit);
+
+async function requestAiEdit() {
+  if (!activeTextDraft) return;
+  const instruction = els.pbAiInstruction.value.trim();
+  if (!instruction) { setAiStatus('Önce ne yapmak istediğini yaz.', true); return; }
+  const { key, rec } = activeTextDraft;
+  const text = rec.text || '';
+  if (!text.trim()) { setAiStatus('Düzenlenecek bir metin yok.', true); return; }
+
+  els.pbAiEdit.classList.add('busy');
+  els.pbAiApply.disabled = true;
+  setAiStatus('Düzenleniyor…');
+  try {
+    const res = await fetch(`${AI_PROXY_BASE}/api/ai-edit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, instruction }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setAiStatus(data.error || 'AI servisine ulaşılamadı.', true);
+      return;
+    }
+    if (!data.result) {
+      setAiStatus('AI servisi boş yanıt döndürdü.', true);
+      return;
+    }
+    pushUndo();
+    rec.text = data.result;
+    syncText(rec);
+    refreshItem(key);
+    els.pbRevert.hidden = !state.textEdits.has(key);
+    updateCount();
+    setAiStatus('Uygulandı.');
+  } catch {
+    setAiStatus('AI servisine ulaşılamadı (sunucu çalışmıyor olabilir).', true);
+  } finally {
+    els.pbAiEdit.classList.remove('busy');
+    els.pbAiApply.disabled = false;
+  }
+}
 
 function deleteItem(key) {
   const ref = state.itemRefs.get(key);
