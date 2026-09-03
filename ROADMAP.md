@@ -26,16 +26,15 @@ olmadan başlatılmaz.
 Bunların hiçbiri "sıradaki iş" olarak otonom başlatılmaz; her biri için
 önce kullanıcıyla mimari karar netleşmeli.
 
-- [ ] **AI ile Düzenle** — NVIDIA API (`nvidia/nemotron-3-super-120b-a12b`,
-      OpenAI-uyumlu `integrate.api.nvidia.com`) kullanılacak.
-      **Engel:** API anahtarı istemci tarafına asla gömülemez (herkese açık
-      JS paketinde/ağ sekmesinde görünür, kota çalınabilir). Bu, Kalem'in
-      ilk backend bileşeni olacak — küçük bir vekil (proxy) sunucu
-      gerektiriyor. Kullanıcının paylaştığı anahtar sohbette açığa çıktığı
-      için ROTATE edilmeli; yeni anahtar asla koda/commit'e yazılmayacak,
-      yalnızca sunucu ortam değişkeni olarak saklanacak. Nereye
-      konuşlandırılacağı (mevcut paylaşımlı Windows Server mı, ayrı bir
-      servis mi) kullanıcı onayı bekliyor.
+- [x] **AI ile Düzenle** — yerel geliştirmede tamamlandı ve gerçek Chrome'da
+      uçtan uca doğrulandı: `server/ai-proxy` (NVIDIA API anahtarını
+      istemciden gizleyen vekil sunucu — origin allowlist, IP + günlük hız
+      sınırı, genel hata maskeleme) + metin özellik çubuğundaki "✦" düğmesi.
+      Anahtar yalnızca yerel, git-ignore'lu `server/ai-proxy/.env` dosyasında;
+      commit'e hiç girmedi.
+      **Kalan:** [ ] Üretime dağıtım — Kalem'in ilk backend bileşeni,
+      paylaşımlı Windows Server'a mı yoksa ayrı bir servise mi
+      konuşlandırılacağı kullanıcı onayı bekliyor.
   - OCR (metin katmanı olmayan taranmış PDF'ler)
   - PDF ↔ Office (Word/Excel/PowerPoint) dönüşümü
   - Gerçek HTML → PDF
