@@ -135,6 +135,22 @@
     <button id="hintClose" aria-label="Kapat">×</button>
   </div>
 
+  <!-- Sayfa düzenleme ön-ekranı: PDF açılır açılmaz, metin/görsel düzenleme
+       BAŞLAMADAN önce gösterilir (bkz. src/pageOrganize.js) — sayfalar
+       silinip/taşındıktan SONRA meta.page indekslerini yeniden hesaplamak
+       yerine, düzenleme hiç başlamadan sayfa yapısı kesinleşmiş olur. -->
+  <div class="page-organize" id="pageOrganize" hidden>
+    <div class="po-header">
+      <h2>Sayfaları Düzenle</h2>
+      <p>Sürükleyerek sırala, döndür ya da sil. Sonra metin/görsel düzenlemeye geçersin.</p>
+    </div>
+    <div class="po-grid" id="poGrid"></div>
+    <div class="po-actions">
+      <button class="ghost-btn" id="poSkip">Atla, doğrudan düzenle</button>
+      <button class="apply-btn" id="poApply">Devam Et</button>
+    </div>
+  </div>
+
   <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden />
   <div class="drag-veil" id="dragVeil" hidden>Bırak, açalım</div>
 

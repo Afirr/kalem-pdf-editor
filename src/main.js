@@ -13,6 +13,8 @@ import { initSidebar, loadThumbnails, refreshLayers, moveLayer } from './sidebar
 import { FONTS } from './engine/fonts.js';
 import { exportPdf, platformName } from './platform/index.js';
 import { initToolbarOverflow } from './toolbarOverflow.js';
+import { showPageOrganizer } from './pageOrganize.js';
+import { applyPageOperations } from './engine/pages.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -36,6 +38,7 @@ const els = {
   pbToBack: $('pbToBack'), pbToFront: $('pbToFront'),
   pbRevert: $('pbRevert'), pbDelete: $('pbDelete'), pbClose: $('pbClose'),
   hint: $('hint'), hintClose: $('hintClose'), dragVeil: $('dragVeil'),
+  pageOrganize: $('pageOrganize'),
 };
 
 const round1 = (n) => Math.round(n * 10) / 10;
@@ -92,6 +95,31 @@ async function loadFile(bytes, name) {
     alert('Bu dosya açılamadı. Şifreli ya da bozuk bir PDF olabilir.\n\n' + err.message);
     return;
   }
+
+  // Sayfa düzenleme ön-adımı: tek sayfalık PDF'te anlamsız, atlanır.
+  if (state.doc.numPages > 1) {
+    const order = await showPageOrganizer(state.doc, els.pageOrganize);
+    const unchanged = !order || (
+      order.length === state.doc.numPages &&
+      order.every((o, i) => o.originalIndex === i && !o.rotate)
+    );
+    if (!unchanged) {
+      let newBytes;
+      try {
+        newBytes = await applyPageOperations(bytes, order);
+      } catch (err) {
+        alert('Sayfalar yeniden düzenlenirken bir sorun oluştu.\n\n' + err.message);
+        return;
+      }
+      try {
+        await openPdf(newBytes, name);
+      } catch (err) {
+        alert('Bu dosya açılamadı. Şifreli ya da bozuk bir PDF olabilir.\n\n' + err.message);
+        return;
+      }
+    }
+  }
+
   revokeAllImageUrls();
   resetAll();
   els.empty.hidden = true;

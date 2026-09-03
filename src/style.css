@@ -684,6 +684,72 @@ body {
   flex-shrink: 0;
 }
 .hint button:hover { color: #fff; background: var(--ink-soft); }
+/* ---------- Sayfa düzenleme ön-ekranı ---------- */
+.page-organize {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: var(--paper);
+  display: flex;
+  flex-direction: column;
+  padding: calc(20px + var(--safe-t)) max(20px, var(--safe-r)) calc(20px + var(--safe-b)) max(20px, var(--safe-l));
+}
+.po-header { text-align: center; margin-bottom: 18px; flex-shrink: 0; }
+.po-header h2 { font-family: var(--serif); font-size: 26px; color: var(--text); margin-bottom: 6px; }
+.po-header p { color: var(--muted); font-size: 13.5px; }
+.po-grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  justify-content: center;
+  align-content: flex-start;
+  align-items: flex-start;
+  padding: 4px;
+}
+.po-thumb {
+  position: relative;
+  width: 150px;
+  background: var(--page);
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(30, 28, 22, 0.15), 0 6px 16px rgba(30, 28, 22, 0.1);
+  overflow: hidden;
+  cursor: grab;
+  transition: transform 120ms ease-out, opacity 120ms ease-out;
+}
+.po-thumb.dragging { opacity: 0.35; }
+.po-thumb canvas { display: block; width: 100%; height: auto; }
+.po-thumb-num {
+  position: absolute; top: 6px; left: 6px;
+  background: rgba(34, 37, 45, 0.75); color: #fff;
+  font-size: 11px; font-variant-numeric: tabular-nums;
+  padding: 2px 7px; border-radius: 999px;
+}
+.po-thumb-actions {
+  position: absolute; top: 6px; right: 6px;
+  display: flex; gap: 4px;
+}
+.po-thumb-actions button {
+  width: 26px; height: 26px; border-radius: 999px; border: none;
+  background: rgba(34, 37, 45, 0.75); color: #fff; font-size: 13px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  /* Dokunmatikte tutamaç sürüklemesiyle çakışmasın (sidebar.js'teki
+     .layer-handle deseniyle aynı gerekçe): buton kendi başına ayrı bir
+     hedef, touch-action'a gerek yok çünkü sürükleme .po-thumb'ın GÖVDESİNDEN
+     başlıyor, bu butonlar yalnız tıklama/tap alıyor. */
+}
+.po-thumb-actions button:hover { background: var(--ink); }
+.po-thumb.removing { opacity: 0.3; }
+.po-thumb.removing canvas { filter: grayscale(1); }
+.po-actions {
+  flex-shrink: 0;
+  display: flex; justify-content: center; gap: 12px;
+  margin-top: 18px;
+}
+.po-actions .apply-btn { padding: 10px 28px; font-size: 14px; }
+
 .drag-veil {
   position: fixed;
   inset: calc(10px + var(--safe-t)) calc(10px + var(--safe-r))
