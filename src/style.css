@@ -521,6 +521,9 @@ body {
 }
 .tcover:hover { box-shadow: inset 0 0 0 1.5px rgba(214, 69, 58, 0.4); }
 .tcover.selected { box-shadow: inset 0 0 0 2px var(--blue); }
+/* Metin taşındıktan sonra eski konumdaki kapatma kutusu tamamen pasif:
+   tıklanamaz, hover/seçili çerçevesi almaz — bkz. pdfview.js renderTextItem. */
+.tcover.inert { pointer-events: none; cursor: default; }
 
 /* Alan (görsel/logo) kapatma + içerik */
 .acover {

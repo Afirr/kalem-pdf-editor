@@ -286,12 +286,22 @@ export function renderTextItem(wrap, pageInfo, meta) {
     return;
   }
 
+  // Metin taşındığında (rec.dx/dy != 0) .tcover HER ZAMAN orijinal konumda
+  // kalır — pdf.js'in sayfa canvas'ına zaten çizdiği eski glifleri örtmenin
+  // tek yolu bu, taşınan kopyayla birlikte kaldırılamaz (kaldırılırsa eski
+  // metin olduğu yerde tekrar görünür). Ama taşındıktan sonra bu kutu artık
+  // kullanıcı için "boş, tıklanabilir, silinebilir" bir öğe gibi
+  // GÖRÜNMEMELİ — aksi hâlde onu seçip silmek, aynı `key`'i paylaştığı için
+  // taşınmış metni de birlikte siliyor. Taşınmışsa etkileşimi tamamen
+  // kapatıyoruz; yalnızca taşınmamışsa (cover ile içerik aynı yerdeyse)
+  // eskisi gibi seçilebilir/tıklanabilir kalıyor.
+  const moved = rec.dx !== 0 || rec.dy !== 0;
   const cover = document.createElement('div');
-  cover.className = 'tcover' + (selected ? ' selected' : '');
+  cover.className = 'tcover' + (moved ? ' inert' : (selected ? ' selected' : ''));
   cover.dataset.key = key;
   positionAt(cover, meta.x, pageInfo.pdfH - meta.yBase - meta.fs * 0.87, meta.w, meta.fs * 1.16, s);
   cover.style.background = rec.bg;
-  if (!editing) {
+  if (!editing && !moved) {
     cover.addEventListener('pointerdown', (ev) => {
       ev.stopPropagation();
       state.onTextPointerDown?.(fullMeta, key, cover, ev);
