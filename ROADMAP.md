@@ -26,15 +26,18 @@ olmadan başlatılmaz.
 Bunların hiçbiri "sıradaki iş" olarak otonom başlatılmaz; her biri için
 önce kullanıcıyla mimari karar netleşmeli.
 
-- [x] **AI ile Düzenle** — yerel geliştirmede tamamlandı ve gerçek Chrome'da
-      uçtan uca doğrulandı: `server/ai-proxy` (NVIDIA API anahtarını
-      istemciden gizleyen vekil sunucu — origin allowlist, IP + günlük hız
-      sınırı, genel hata maskeleme) + metin özellik çubuğundaki "✦" düğmesi.
-      Anahtar yalnızca yerel, git-ignore'lu `server/ai-proxy/.env` dosyasında;
-      commit'e hiç girmedi.
-      **Kalan:** [ ] Üretime dağıtım — Kalem'in ilk backend bileşeni,
-      paylaşımlı Windows Server'a mı yoksa ayrı bir servise mi
-      konuşlandırılacağı kullanıcı onayı bekliyor.
+- [x] **AI ile Düzenle** — üretimde canlı (4 Eyl 2026). `server/ai-proxy`
+      NVIDIA API anahtarını istemciden gizleyen vekil sunucu (origin
+      allowlist, IP + günlük hız sınırı, genel hata maskeleme) +
+      metin özellik çubuğundaki "✦" düğmesi. Anahtar yalnızca sunucudaki
+      git-ignore'lu `.env` dosyalarında; hiçbir commit'e girmedi.
+      Dağıtım: paylaşımlı Windows Server'da `kalem-ai-proxy` NSSM servisi
+      (yalnız `127.0.0.1:8790`'ı dinler — 8787 DEĞİL, çünkü agency-backend
+      o portu kendi iç amacıyla zaten kullanıyordu, çakışma kurulum
+      sırasında tespit edilip agency-backend'e dokunmadan çözüldü),
+      Caddy'nin mevcut `kalem-pdf.duckdns.org` bloğuna eklenen
+      `handle /api/*` ile genel adrese bağlandı. Tuval paneli ve IsTakip
+      dağıtım sırasında ve sonrasında doğrulandı, etkilenmediler.
   - OCR (metin katmanı olmayan taranmış PDF'ler)
   - PDF ↔ Office (Word/Excel/PowerPoint) dönüşümü
   - Gerçek HTML → PDF
