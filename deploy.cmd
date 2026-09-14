@@ -49,4 +49,4 @@ if not exist "C:\kalem\dist\index.html" (
 echo === Basarili ===
 git log -1 --oneline
 echo Caddy dist/ klasorunu dogrudan sundugu icin ek bir restart/reload gerekmiyor.
-echo Tarayicidan https://kalem-pdf.duckdns.org adresini kontrol et.
+echo Tarayicidan https://kalem.tuvalcreative.com adresini kontrol et.

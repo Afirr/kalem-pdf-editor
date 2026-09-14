@@ -35,9 +35,14 @@ Bunların hiçbiri "sıradaki iş" olarak otonom başlatılmaz; her biri için
       (yalnız `127.0.0.1:8790`'ı dinler — 8787 DEĞİL, çünkü agency-backend
       o portu kendi iç amacıyla zaten kullanıyordu, çakışma kurulum
       sırasında tespit edilip agency-backend'e dokunmadan çözüldü),
-      Caddy'nin mevcut `kalem-pdf.duckdns.org` bloğuna eklenen
-      `handle /api/*` ile genel adrese bağlandı. Tuval paneli ve IsTakip
-      dağıtım sırasında ve sonrasında doğrulandı, etkilenmediler.
+      Caddy'nin `handle /api/*` bloğuyla genel adrese bağlandı. Tuval
+      paneli ve IsTakip dağıtım sırasında ve sonrasında doğrulandı,
+      etkilenmediler.
+      **14 Eyl 2026 — alan adı taşındı:** artık `https://kalem.tuvalcreative.com`
+      (Turhost DNS, aynı sunucu IP'si `45.43.154.40`'a A kaydıyla
+      yönlendirildi). Eski `kalem-pdf.duckdns.org` kullanıcı talebiyle
+      tamamen kapatıldı — Caddy'de o bloğu kaldırıldı, artık yanıt
+      vermiyor.
   - OCR (metin katmanı olmayan taranmış PDF'ler)
   - PDF ↔ Office (Word/Excel/PowerPoint) dönüşümü
   - Gerçek HTML → PDF

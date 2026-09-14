@@ -8,7 +8,7 @@ import express from 'express';
 const PORT = Number(process.env.PORT || 8787);
 const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY;
 const NVIDIA_MODEL = process.env.NVIDIA_MODEL || 'nvidia/nemotron-3-super-120b-a12b';
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:5199,https://kalem-pdf.duckdns.org')
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:5199,https://kalem.tuvalcreative.com')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);

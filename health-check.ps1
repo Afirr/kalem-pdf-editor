@@ -12,7 +12,7 @@ $alertFile = Join-Path $logDir "health-alerts.log"
 
 $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 try {
-    $r = Invoke-WebRequest -Uri "https://kalem-pdf.duckdns.org/" -TimeoutSec 15 -UseBasicParsing
+    $r = Invoke-WebRequest -Uri "https://kalem.tuvalcreative.com/" -TimeoutSec 15 -UseBasicParsing
     $status = $r.StatusCode
 } catch {
     $status = "HATA: $($_.Exception.Message)"
@@ -21,7 +21,7 @@ try {
 "$ts  status=$status" | Add-Content -Path $logFile -Encoding UTF8
 
 if ($status -ne 200) {
-    "$ts  UYARI: kalem-pdf.duckdns.org saglik kontrolu basarisiz -> $status" | Add-Content -Path $alertFile -Encoding UTF8
+    "$ts  UYARI: kalem.tuvalcreative.com saglik kontrolu basarisiz -> $status" | Add-Content -Path $alertFile -Encoding UTF8
 }
 
 # Log dosyasi sinirsiz buyumesin (agency/IsTakip ile ayni disk).
